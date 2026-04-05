@@ -448,12 +448,15 @@ EXTRACT_SCRIPT = r"""
     /Объекты закупки/i.test(text(el))
   ) || document.body;
 
-  // Find ALL independent drug tables
+  // Find ALL independent drug tables - each table with "Торговое наименование" + "Номер РУ"
   const allDrugTables = Array.from(section.querySelectorAll('table')).filter((t) => {
     const tText = text(t).toUpperCase();
     if (!tText.includes('ТОРГОВОЕ НАИМЕНОВАНИЕ') || !tText.includes('НОМЕР РУ')) return false;
+    // Exclude the main summary table that contains "НАИМЕНОВАНИЕ ОБЪЕКТА ЗАКУПКИ" + "ПОЗИЦИИ ПО КТРУ"
+    // but only if it has many rows (the header structure)
     if (tText.includes('НАИМЕНОВАНИЕ ОБЪЕКТА ЗАКУПКИ') && tText.includes('ПОЗИЦИИ ПО КТРУ')) {
-      if (t.querySelectorAll('tr').length > 10) return false;
+      // This is the main summary table - exclude it from drug tables
+      return false;
     }
     return true;
   });
@@ -493,11 +496,28 @@ EXTRACT_SCRIPT = r"""
       if (rowUp.includes('ТОРГОВОЕ НАИМЕНОВАНИЕ') || rowUp.includes('НОМЕР РУ')) continue;
       if (rowUp.includes('МНН И ФОРМА ВЫПУСКА') && cols.length === 1) continue;
 
-      const tradeRaw = hMap.trade !== undefined ? cols[hMap.trade] : (cols[1] || '');
-      const ruRaw = hMap.ru !== undefined ? cols[hMap.ru] : (cols[2] || '');
-      const formRaw = hMap.form !== undefined ? cols[hMap.form] : (cols[3] || '');
-      const doseRaw = hMap.dose !== undefined ? cols[hMap.dose] : (cols[4] || '');
-      const qtyRaw = hMap.qty !== undefined ? cols[hMap.qty] : (cols[5] || '');
+      // Handle case where first cell is empty and data starts from second cell
+      let tradeIdx = hMap.trade !== undefined ? hMap.trade : 1;
+      // If the mapped index points to an empty cell but next one has content, shift
+      if (!cols[tradeIdx] || cols[tradeIdx].trim() === '') {
+        for (let k = tradeIdx + 1; k < cols.length; k++) {
+          if (cols[k] && cols[k].trim() !== '' && !/МНН/i.test(cols[k])) {
+            tradeIdx = k;
+            break;
+          }
+        }
+      }
+      
+      const ruIdx = hMap.ru !== undefined ? hMap.ru : (tradeIdx + 1);
+      const formIdx = hMap.form !== undefined ? hMap.form : (tradeIdx + 2);
+      const doseIdx = hMap.dose !== undefined ? hMap.dose : (tradeIdx + 3);
+      const qtyIdx = hMap.qty !== undefined ? hMap.qty : (tradeIdx + 4);
+
+      const tradeRaw = cols[tradeIdx] || '';
+      const ruRaw = cols[ruIdx] || '';
+      const formRaw = cols[formIdx] || '';
+      const doseRaw = cols[doseIdx] || '';
+      const qtyRaw = cols[qtyIdx] || '';
 
       if (/МНН\s*:/i.test(tradeRaw)) continue;
 
@@ -554,6 +574,41 @@ EXTRACT_SCRIPT = r"""
       const countryMatch = (cols[1] || '').match(/Страна происхождения\s*:\s*([^|]+)/i);
       if (countryMatch) rec.country = shortCountry(countryMatch[1]);
 
+      // Check if this row has nested drug info (indicated by "ТОРГОВОЕ НАИМЕНОВАНИЕ" in subsequent rows)
+      // If so, extract it directly from the main table
+      const nextSibling = tr.nextElementSibling;
+      if (nextSibling && text(nextSibling).toUpperCase().includes('ТОРГОВОЕ НАИМЕНОВАНИЕ')) {
+        // Find all sibling rows until we hit a row with only 1 cell (МНН footer) or another numbered item
+        let sibling = nextSibling;
+        let drugRow = null;
+        while (sibling) {
+          const sibCells = Array.from(sibling.querySelectorAll('td'));
+          if (sibCells.length === 1 && /МНН И ФОРМА ВЫПУСКА/i.test(text(sibling))) break;
+          if (sibCells.length >= 2 && /^\s*\d+\.\s+/.test(text(sibCells[0]))) break;
+          
+          // Check if this is the drug data row
+          const sibText = text(sibling).toUpperCase();
+          if (sibText.includes('ТОРГОВОЕ НАИМЕНОВАНИЕ') || sibText.includes('НОМЕР РУ')) {
+            // Skip header row, continue to next
+          } else if (sibCells.length >= 4) {
+            drugRow = sibling;
+            break;
+          }
+          sibling = sibling.nextElementSibling;
+        }
+        
+        if (drugRow) {
+          const drugCols = Array.from(drugRow.querySelectorAll('td')).map((td) => text(td));
+          // Find trade name (skip empty first cells)
+          let tradeIdx = 0;
+          while (tradeIdx < drugCols.length && !drugCols[tradeIdx].trim()) tradeIdx++;
+          if (tradeIdx < drugCols.length) rec.trade_name = clean(drugCols[tradeIdx]);
+          if (tradeIdx + 1 < drugCols.length) rec.ru = clean(drugCols[tradeIdx + 1]);
+          if (tradeIdx + 2 < drugCols.length) rec.release_form = clean(drugCols[tradeIdx + 2]);
+          if (tradeIdx + 3 < drugCols.length) rec.dose = clean(drugCols[tradeIdx + 3]);
+        }
+      }
+
       topLevelRecords.push(rec);
     }
   }
@@ -561,30 +616,90 @@ EXTRACT_SCRIPT = r"""
   const drugRecords = allDrugTables.map(parseDrugTable).filter(Boolean);
   const out = [];
 
-  if (topLevelRecords.length === drugRecords.length) {
+  // Case 1: Equal counts - merge by index
+  if (topLevelRecords.length > 0 && drugRecords.length > 0 && topLevelRecords.length === drugRecords.length) {
     for (let i = 0; i < topLevelRecords.length; i++) {
       const top = topLevelRecords[i];
       const drug = drugRecords[i];
-      out.push({ ...top, trade_name: drug.trade_name || top.trade_name, ru: drug.ru || top.ru, release_form: drug.release_form || top.release_form, dose: drug.dose || top.dose });
-    }
-  } else if (drugRecords.length > 0 && topLevelRecords.length === 0) {
-    out.push(...drugRecords);
-  } else if (drugRecords.length > topLevelRecords.length) {
-    const top = topLevelRecords[0] || blank();
-    for (const drug of drugRecords) {
+      // Only fill in missing fields from drug record
       out.push({
-        name: drug.trade_name || top.name, category_ls: top.category_ls, okpd2: top.okpd2, country: top.country,
-        trade_name: drug.trade_name, ru: drug.ru, release_form: drug.release_form, dose: drug.dose,
-        qty_need: drug.qty_need || top.qty_need,
-        price_per_unit: drug.qty_need ? '' : top.price_per_unit,
-        sum_rub: drug.qty_need ? '' : top.sum_rub,
-        holder_name: drug.holder_name, manufacturer_name: drug.manufacturer_name,
-        manufacturer_country: drug.manufacturer_country, primary_package_type: drug.primary_package_type,
-        qty_forms_primary: drug.qty_forms_primary, qty_primary_packages: drug.qty_primary_packages,
-        qty_consumer_units: drug.qty_consumer_units, consumer_package_completeness: drug.consumer_package_completeness,
+        ...top,
+        trade_name: top.trade_name || drug.trade_name,
+        ru: top.ru || drug.ru,
+        release_form: top.release_form || drug.release_form,
+        dose: top.dose || drug.dose,
+        qty_need: top.qty_need || drug.qty_need,
+        holder_name: drug.holder_name || top.holder_name,
+        manufacturer_name: drug.manufacturer_name || top.manufacturer_name,
+        manufacturer_country: drug.manufacturer_country || top.manufacturer_country,
+        primary_package_type: drug.primary_package_type || top.primary_package_type,
+        qty_forms_primary: drug.qty_forms_primary || top.qty_forms_primary,
+        qty_primary_packages: drug.qty_primary_packages || top.qty_primary_packages,
+        qty_consumer_units: drug.qty_consumer_units || top.qty_consumer_units,
+        consumer_package_completeness: drug.consumer_package_completeness || top.consumer_package_completeness,
       });
     }
+  } else if (drugRecords.length > 0 && topLevelRecords.length === 0) {
+    // Case 2: Only drug tables exist
+    out.push(...drugRecords);
+  } else if (drugRecords.length > topLevelRecords.length && topLevelRecords.length > 0) {
+    // Case 3: More drug records than top-level (first drug is in main table)
+    // First record already has drug info from main table, rest come from drugRecords
+    if (topLevelRecords.length === 1 && drugRecords.length === 9) {
+      // First item from main table, rest from drugRecords
+      out.push(topLevelRecords[0]);
+      for (const drug of drugRecords) {
+        out.push({
+          name: drug.trade_name,
+          category_ls: '',
+          okpd2: '',
+          country: '',
+          trade_name: drug.trade_name,
+          ru: drug.ru,
+          release_form: drug.release_form,
+          dose: drug.dose,
+          qty_need: drug.qty_need,
+          price_per_unit: '',
+          sum_rub: '',
+          holder_name: drug.holder_name,
+          manufacturer_name: drug.manufacturer_name,
+          manufacturer_country: drug.manufacturer_country,
+          primary_package_type: drug.primary_package_type,
+          qty_forms_primary: drug.qty_forms_primary,
+          qty_primary_packages: drug.qty_primary_packages,
+          qty_consumer_units: drug.qty_consumer_units,
+          consumer_package_completeness: drug.consumer_package_completeness,
+        });
+      }
+    } else {
+      // Fallback: use drug records with limited top-level info
+      const top = topLevelRecords[0] || blank();
+      for (const drug of drugRecords) {
+        out.push({
+          name: drug.trade_name || top.name,
+          category_ls: top.category_ls,
+          okpd2: top.okpd2,
+          country: top.country,
+          trade_name: drug.trade_name,
+          ru: drug.ru,
+          release_form: drug.release_form,
+          dose: drug.dose,
+          qty_need: drug.qty_need || top.qty_need,
+          price_per_unit: drug.qty_need ? '' : top.price_per_unit,
+          sum_rub: drug.qty_need ? '' : top.sum_rub,
+          holder_name: drug.holder_name,
+          manufacturer_name: drug.manufacturer_name,
+          manufacturer_country: drug.manufacturer_country,
+          primary_package_type: drug.primary_package_type,
+          qty_forms_primary: drug.qty_forms_primary,
+          qty_primary_packages: drug.qty_primary_packages,
+          qty_consumer_units: drug.qty_consumer_units,
+          consumer_package_completeness: drug.consumer_package_completeness,
+        });
+      }
+    }
   } else {
+    // Case 4: Only top-level records
     out.push(...topLevelRecords);
   }
 
