@@ -1497,6 +1497,10 @@ EXTRACT_SCRIPT = r"""
 
   const nestedTables = Array.from(section.querySelectorAll('table')).filter((t) => {
     const tText = text(t).toUpperCase();
+    // Exclude the main parent table that contains both main headers and nested drug tables
+    if (tText.includes('НАИМЕНОВАНИЕ ОБЪЕКТА ЗАКУПКИ') || tText.includes('ПОЗИЦИИ ПО КТРУ')) {
+      return false;
+    }
     return tText.includes('ТОРГОВОЕ НАИМЕНОВАНИЕ') && tText.includes('НОМЕР РУ');
   });
 
