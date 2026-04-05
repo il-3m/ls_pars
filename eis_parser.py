@@ -1278,11 +1278,16 @@ EXTRACT_SCRIPT = r"""
   const extractName = (srcText) => {
     const src = clean(srcText);
     if (!src) return '';
-    const m = src.match(/\d+\.\s*[^|]+/);
+    // Match pattern like "1. DRUG NAME" - the number followed by dot and space, then the name
+    const m = src.match(/^\s*(\d+\.)\s*([А-Яа-я0-9\s\-\+\(\),]+)/);
     if (!m) return '';
-    let value = clean(m[0]);
-    value = clean(value.replace(/Страна происхождения\s*:.*/i, ''));
-    return value;
+    let value = clean(m[2]);
+    // Remove country info if present (stop at first occurrence of 'Страна')
+    const countryIdx = value.toUpperCase().indexOf('СТРАНА');
+    if (countryIdx > 0) {
+      value = value.slice(0, countryIdx);
+    }
+    return clean(value);
   };
 
   const metaMap = [
