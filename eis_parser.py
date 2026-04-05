@@ -1529,9 +1529,9 @@ EXTRACT_SCRIPT = r"""
   };
 
   const out = [];
-  for (let i = 0; i < topRecords.length; i++) {
-    const top = topRecords[i];
+  for (let i = 0; i < topRows.length; i++) {
     const topTr = topRows[i];
+    const top = parseTopRow(topTr);
     const details = findDetailsForTopRow(topTr);
     
     if (!details || details.length === 0) {
