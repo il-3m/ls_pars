@@ -1445,12 +1445,16 @@ EXTRACT_SCRIPT = r"""
       const headers = cells.map((x) => text(x).toUpperCase());
       const headerLine = headers.join(' | ');
       if (!/ТОРГОВОЕ НАИМЕНОВАНИЕ/.test(headerLine) || !/НОМЕР РУ/.test(headerLine)) continue;
-      headers.forEach((h, i) => {
-        if (h.includes('ТОРГОВОЕ')) hMap.trade = i;
-        if (h.includes('НОМЕР РУ')) hMap.ru = i;
-        if (h.includes('ФОРМА')) hMap.form = i;
-        if (h.includes('ДОЗИРОВКА')) hMap.dose = i;
-      });
+      
+      // Find column indices by matching header text explicitly
+      for (let i = 0; i < headers.length; i++) {
+        const h = headers[i];
+        // Match exact header names to avoid confusion with similar labels
+        if (/ТОРГОВОЕ\s+НАИМЕНОВАНИЕ/.test(h)) hMap.trade = i;
+        if (/НОМЕР\s+РУ/.test(h)) hMap.ru = i;
+        if (/ЛЕКАРСТВЕННАЯ\s+ФОРМА/.test(h)) hMap.form = i;
+        if (/ДОЗИРОВКА/.test(h)) hMap.dose = i;
+      }
       headerFound = true;
       break;
     }
@@ -1466,10 +1470,13 @@ EXTRACT_SCRIPT = r"""
       if (rowUp.includes('ТОРГОВОЕ НАИМЕНОВАНИЕ') || rowUp.includes('НОМЕР РУ')) continue;
 
       const rec = blank();
-      const tradeRaw = hMap.trade !== undefined ? cols[hMap.trade] : cols[0] || '';
-      const ruRaw = hMap.ru !== undefined ? cols[hMap.ru] : '';
-      const formRaw = hMap.form !== undefined ? cols[hMap.form] : '';
-      const doseRaw = hMap.dose !== undefined ? cols[hMap.dose] : '';
+      
+      // Use mapped indices with fallbacks based on typical nested table structure:
+      // [chevron(empty), trade_name, ru, form, dose, qty]
+      const tradeRaw = hMap.trade !== undefined ? cols[hMap.trade] : (cols[1] || '');
+      const ruRaw = hMap.ru !== undefined ? cols[hMap.ru] : (cols[2] || '');
+      const formRaw = hMap.form !== undefined ? cols[hMap.form] : (cols[3] || '');
+      const doseRaw = hMap.dose !== undefined ? cols[hMap.dose] : (cols[4] || '');
 
       // Skip cells that contain meta blob (МНН и форма выпуска в соответствии с ГРЛС...)
       rec.trade_name = /МНН\s*:/i.test(tradeRaw) ? '' : clean(tradeRaw);
