@@ -1320,10 +1320,24 @@ EXTRACT_SCRIPT = r"""
     /Объекты закупки/i.test(text(el))
   ) || document.body;
 
-  const isTopRow = (tr) => /\d+\.\s+/.test(text(tr));
+  const isTopRow = (tr) => {
+    // Check if row starts with a number pattern like "1." or "2."
+    if (!/^\s*\d+\.\s+/.test(text(tr))) return false;
+    const tds = tr.querySelectorAll('td');
+    // Top rows have 7+ cells OR contain qty/price/sum columns
+    if (tds.length >= 7) return true;
+    // Also check if it contains quantity-like data in expected column positions
+    const cellTexts = Array.from(tds).map(td => text(td));
+    if (cellTexts.length >= 5) {
+      // Check if any cell looks like quantity with unit
+      for (const c of cellTexts) {
+        if (looksLikeQty(c)) return true;
+      }
+    }
+    return false;
+  };
   const topRows = Array.from(section.querySelectorAll('tr')).filter((tr) => {
-    if (!isTopRow(tr)) return false;
-    return tr.querySelectorAll('td').length >= 3;
+    return isTopRow(tr);
   });
 
   const parseTopRow = (tr) => {
@@ -1331,6 +1345,47 @@ EXTRACT_SCRIPT = r"""
     const cols = Array.from(tr.querySelectorAll('td')).map((td) => text(td));
     const rowText = text(tr);
     rec.name = cols.map(extractName).find(Boolean) || extractName(rowText) || clean(cols[0] || '');
+
+    // Direct column mapping for quantity, price, and sum when we have enough columns
+    // Typical structure: [empty, name+country, category+okpd2, "Товар", qty, price, sum+VAT]
+    // OR for rows with 9 cells: [empty, name, empty, trade, ru, form, dose, qty, meta]
+    if (cols.length >= 7) {
+      // Try standard 7-column layout first
+      let foundQty = false;
+      
+      // Column 4 (index 4) typically contains quantity with unit
+      const qtyCell = clean(cols[4] || '');
+      if (qtyCell && looksLikeQty(qtyCell)) {
+        rec.qty_need = extractQty(qtyCell) || qtyCell;
+        foundQty = true;
+      }
+      
+      // Column 5 (index 5) typically contains price per unit
+      const priceCell = clean(cols[5] || '');
+      if (priceCell && looksLikePrice(priceCell)) {
+        rec.price_per_unit = priceCell;
+      }
+      
+      // Column 6 (index 6) typically contains sum with VAT info
+      const sumCell = clean(cols[6] || '');
+      if (sumCell && /НДС/i.test(sumCell)) {
+        rec.sum_rub = extractSum(sumCell);
+      }
+      
+      // For 9-column layouts, check alternative positions
+      if (!foundQty && cols.length >= 9) {
+        // In some layouts, qty might be in a different position
+        for (let i = 4; i < cols.length; i++) {
+          const cell = clean(cols[i] || '');
+          if (!rec.qty_need && looksLikeQty(cell)) {
+            rec.qty_need = extractQty(cell) || cell;
+          }
+          if (!rec.price_per_unit && looksLikePrice(cell)) {
+            rec.price_per_unit = cell;
+          }
+        }
+      }
+    }
 
     const tokens = [];
     cols.forEach((c) => {
@@ -1369,7 +1424,6 @@ EXTRACT_SCRIPT = r"""
 
     if (!rec.qty_need) rec.qty_need = extractQty(rowText);
     if (!rec.price_per_unit) rec.price_per_unit = extractPrice(rowText);
-    if (!rec.sum_rub && /НДС/i.test(rowText)) rec.sum_rub = extractSum(rowText);
     if (!rec.sum_rub && /НДС/i.test(rowText)) rec.sum_rub = extractSum(rowText);
 
     if (!rec.category_ls) {
@@ -1417,11 +1471,13 @@ EXTRACT_SCRIPT = r"""
       const formRaw = hMap.form !== undefined ? cols[hMap.form] : '';
       const doseRaw = hMap.dose !== undefined ? cols[hMap.dose] : '';
 
+      // Skip cells that contain meta blob (МНН и форма выпуска в соответствии с ГРЛС...)
       rec.trade_name = /МНН\s*:/i.test(tradeRaw) ? '' : clean(tradeRaw);
       rec.ru = clean((clean(ruRaw).match(rx.ru) || [])[1] || ruRaw || '');
       rec.release_form = clean(formRaw);
       rec.dose = clean((clean(doseRaw).match(rx.dose) || [])[1] || doseRaw || '');
 
+      // Extract meta fields from the row text (including from cells with long meta blobs)
       const meta = extractMetaFromText(rowText);
       Object.keys(meta).forEach((k) => {
         if (!rec[k]) rec[k] = clean(meta[k]);
