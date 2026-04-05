@@ -1501,72 +1501,17 @@ EXTRACT_SCRIPT = r"""
   });
 
   const topRecords = topRows.map(parseTopRow);
-  
-  // Build a map of top-row text to its record for matching
-  const topByName = new Map();
-  for (const rec of topRecords) {
-    const key = clean(rec.name || '').toLowerCase().slice(0, 30);
-    if (key) topByName.set(key, rec);
-  }
-  
-  // Parse all nested tables and try to match them with top records by name
-  const detailsWithMatch = [];
-  for (const table of nestedTables) {
-    const details = parseNestedTable(table);
-    if (!details.length) continue;
-    
-    // Try to find matching top record by comparing drug names
-    let matchedTop = null;
-    for (const d of details) {
-      const drugName = clean(d.trade_name || '').toLowerCase();
-      if (!drugName) continue;
-      
-      // Search in all top records for a name match
-      for (const [key, topRec] of topByName.entries()) {
-        if (drugName.includes(key) || key.includes(drugName)) {
-          matchedTop = topRec;
-          break;
-        }
-      }
-      if (matchedTop) break;
-    }
-    
-    // If no match found, use the first top record as fallback (for sequential matching)
-    if (!matchedTop && topRecords.length > 0) {
-      // Use index-based matching only as fallback
-      const idx = detailsWithMatch.length;
-      matchedTop = topRecords[Math.min(idx + 1, topRecords.length - 1)];
-    }
-    
-    detailsWithMatch.push({ details, matchedTop });
-  }
-  
+  const detailsByIndex = nestedTables.map(parseNestedTable);
   const out = [];
-  
-  // First, add records that have no nested tables (like AMBROXOL base row)
-  const usedTopIndices = new Set();
-  for (const { matchedTop } of detailsWithMatch) {
-    if (matchedTop) {
-      const idx = topRecords.indexOf(matchedTop);
-      if (idx >= 0) usedTopIndices.add(idx);
-    }
-  }
-  
-  // Add unmatched top records first (like AMBROXOL without nested table)
+
   for (let i = 0; i < topRecords.length; i++) {
-    if (!usedTopIndices.has(i)) {
-      const top = topRecords[i];
-      // Check if this row has any nested data already
-      const hasNested = detailsWithMatch.some(({ matchedTop }) => matchedTop === top);
-      if (!hasNested) {
-        out.push(top);
-      }
+    const top = topRecords[i];
+    const details = detailsByIndex[i] || [];
+    if (!details.length) {
+      out.push(top);
+      continue;
     }
-  }
-  
-  // Then add all records with nested details
-  for (const { details, matchedTop } of detailsWithMatch) {
-    const top = matchedTop || topRecords[0];
+
     for (const d of details) {
       const rec = {
         ...top,

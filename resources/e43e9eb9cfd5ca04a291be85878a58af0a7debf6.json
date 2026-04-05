@@ -1,0 +1,1 @@
+{"defaultValue":1440,"description":"","nextCheck":1775398174867,"parameterName":"CHECK_SSL.INTERVAL","parameterPath":"Common","parameterTtl":1800000,"shouldLoadSync":false,"value":1440,"lastConsulQueryTime":1775398174867,"consulValueLoaded":true}
