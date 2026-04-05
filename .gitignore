@@ -1,12 +1,26 @@
-```
-# Compiled Python files
-__pycache__/
+```python
+# Compiled and build artifacts
 *.pyc
-*.pyo
+__pycache__/
+*.o
+*.obj
 
-# Trace debug resources (generated files)
-trace_debug/resources/
-trace_debug/trace.network
-trace_debug/trace.stacks
-trace_debug/trace.trace
+# Dependencies
+.venv/
+venv/
+node_modules/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
 ```
