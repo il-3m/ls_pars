@@ -1505,18 +1505,42 @@ EXTRACT_SCRIPT = r"""
     return tText.includes('ТОРГОВОЕ НАИМЕНОВАНИЕ') && tText.includes('НОМЕР РУ');
   });
 
-  const topRecords = topRows.map(parseTopRow);
-  const detailsByIndex = nestedTables.map(parseNestedTable);
-  const out = [];
+  // Вместо сопоставления по индексу, ищем таблицу деталей для каждой top-строки отдельно
+  // Таблица деталей обычно следует сразу за top-строкой или находится внутри того же блока
+  const findDetailsForTopRow = (topTr) => {
+    // Ищем следующую таблицу после этой строки
+    let current = topTr;
+    while (current && current.nextElementSibling) {
+      current = current.nextElementSibling;
+      // Проверяем, является ли элемент таблицей с ГРЛС
+      if (current.tagName === 'TABLE' || current.querySelector('table')) {
+        const table = current.tagName === 'TABLE' ? current : current.querySelector('table');
+        const tText = text(table).toUpperCase();
+        if (tText.includes('ТОРГОВОЕ НАИМЕНОВАНИЕ') && tText.includes('НОМЕР РУ')) {
+          return parseNestedTable(table);
+        }
+      }
+      // Если встретили другую нумерованную строку - остановка
+      if (current.tagName === 'TR' && /^\\s*\\d+\\.\\s+/.test(text(current))) {
+        break;
+      }
+    }
+    return [];
+  };
 
+  const out = [];
   for (let i = 0; i < topRecords.length; i++) {
     const top = topRecords[i];
-    const details = detailsByIndex[i] || [];
-    if (!details.length) {
+    const topTr = topRows[i];
+    const details = findDetailsForTopRow(topTr);
+    
+    if (!details || details.length === 0) {
+      // Нет деталей - добавляем как есть (позиции без ГРЛС)
       out.push(top);
       continue;
     }
 
+    // Есть детали - создаем копию top для каждой строки деталей
     for (const d of details) {
       const rec = {
         ...top,
@@ -1537,36 +1561,9 @@ EXTRACT_SCRIPT = r"""
     }
   }
 
-  const uniq = [];
-  const seen = new Set();
-  for (const rec of out) {
-    const key = [
-      rec.name,
-      rec.category_ls,
-      rec.okpd2,
-      rec.country,
-      rec.trade_name,
-      rec.ru,
-      rec.release_form,
-      rec.dose,
-      rec.qty_need,
-      rec.price_per_unit,
-      rec.sum_rub,
-      rec.holder_name,
-      rec.manufacturer_name,
-      rec.manufacturer_country,
-      rec.primary_package_type,
-      rec.qty_forms_primary,
-      rec.qty_primary_packages,
-      rec.qty_consumer_units,
-      rec.consumer_package_completeness,
-    ].join('|');
-    if (seen.has(key)) continue;
-    seen.add(key);
-    uniq.push(rec);
-  }
-
-  return uniq;
+  // УБРАНА ДЕДУПЛИКАЦИЯ - оставляем все позиции, даже с одинаковыми РУ/наименованиями
+  // В закупках могут быть повторяющиеся позиции (разные лоты, объемы, поставщики)
+  return out;
 }
 """
 
