@@ -104,9 +104,11 @@ class ParseRecord:
 
 
 class EISParser:
-    def __init__(self, timeout_ms: int = 60000, expand_rounds: int = 4) -> None:
+    def __init__(self, timeout_ms: int = 60000, expand_rounds: int = 4, page_load_delay: int = 1200, expand_delay: int = 800) -> None:
         self.timeout_ms = timeout_ms
         self.expand_rounds = expand_rounds
+        self.page_load_delay = page_load_delay
+        self.expand_delay = expand_delay
 
     async def parse_url(
         self,
@@ -123,7 +125,7 @@ class EISParser:
         parsed_dir.mkdir(parents=True, exist_ok=True)
 
         await page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms)
-        await page.wait_for_timeout(1200)
+        await page.wait_for_timeout(self.page_load_delay)
 
         await self._close_overlays(page)
         frame = await self._find_frame_with_objects(page)
@@ -131,7 +133,7 @@ class EISParser:
             raise RuntimeError("Не найден контекст с блоком 'Объекты закупки'")
 
         await self._expand_objects(frame)
-        await page.wait_for_timeout(800)
+        await page.wait_for_timeout(self.expand_delay)
 
         html = await frame.content()
         (raw_dir / "objects_frame.html").write_text(html, encoding="utf-8")
@@ -837,7 +839,12 @@ def _log_line(log_fn, text: str, *, is_error: bool = False) -> None:
 
 
 async def run(args: argparse.Namespace, log_fn=None) -> int:
-    parser = EISParser(timeout_ms=args.timeout_ms, expand_rounds=args.expand_rounds)
+    parser = EISParser(
+        timeout_ms=args.timeout_ms,
+        expand_rounds=args.expand_rounds,
+        page_load_delay=getattr(args, 'page_load_delay', 1200),
+        expand_delay=getattr(args, 'expand_delay', 800),
+    )
     archive_dir = Path(args.archive_dir)
     urls = _read_urls(args.url, Path(args.url_file) if args.url_file else None)
 
@@ -903,6 +910,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--trace", action="store_true", help="Save Playwright trace.zip")
     p.add_argument("--timeout-ms", type=int, default=60000, help="Navigation timeout")
     p.add_argument("--expand-rounds", type=int, default=4, help="Expand passes for nested rows")
+    p.add_argument("--page-load-delay", type=int, default=1200, help="Delay after page load (ms)")
+    p.add_argument("--expand-delay", type=int, default=800, help="Delay after expand operations (ms)")
     return p
 
 
@@ -925,6 +934,10 @@ class EISParserGUI(tk.Tk):
         self.xlsx_var = tk.StringVar(value="export/result.xlsx")
         self.trace_var = tk.BooleanVar(value=True)
         self.headed_var = tk.BooleanVar(value=False)
+        self.timeout_ms_var = tk.IntVar(value=90000)
+        self.expand_rounds_var = tk.IntVar(value=5)
+        self.page_load_delay_var = tk.IntVar(value=1200)
+        self.expand_delay_var = tk.IntVar(value=800)
 
         self.all_rows: list[dict[str, str]] = []
         self.filtered_rows: list[dict[str, str]] = []
@@ -951,6 +964,15 @@ class EISParserGUI(tk.Tk):
         self._row_input(controls, "Папка архива", self.archive_var)
         self._row_input(controls, "CSV файл", self.csv_var)
         self._row_input(controls, "XLSX файл", self.xlsx_var)
+
+        # Timing settings frame
+        timing_frame = ttk.LabelFrame(controls, text="Тайминги и скорость обработки", padding=6)
+        timing_frame.pack(fill=tk.X, pady=(6, 0))
+        
+        self._row_spinbox(timing_frame, "Таймаут загрузки (мс):", self.timeout_ms_var, from_=30000, to=300000, step=10000)
+        self._row_spinbox(timing_frame, "Раунды раскрытия:", self.expand_rounds_var, from_=1, to=10, step=1)
+        self._row_spinbox(timing_frame, "Задержка после загрузки (мс):", self.page_load_delay_var, from_=200, to=5000, step=100)
+        self._row_spinbox(timing_frame, "Задержка раскрытия (мс):", self.expand_delay_var, from_=200, to=3000, step=100)
 
         toggles = ttk.Frame(controls)
         toggles.pack(fill=tk.X, pady=(4, 0))
@@ -1014,6 +1036,14 @@ class EISParserGUI(tk.Tk):
             ).pack(side=tk.LEFT, padx=(6, 0))
         if on_change:
             ent.bind("<KeyRelease>", lambda _e: on_change())
+
+    def _row_spinbox(self, parent, label, variable, from_=0, to=100, step=1) -> None:
+        row = ttk.Frame(parent)
+        row.pack(fill=tk.X, pady=2)
+        ttk.Label(row, text=label, width=28).pack(side=tk.LEFT)
+        spin = ttk.Spinbox(row, textvariable=variable, from_=from_, to=to, increment=step, width=15)
+        spin.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        spin.bind("<FocusIn>", lambda _e: spin.selection_range(0, tk.END))
 
     def _add_context_menu(self, widget: ttk.Entry) -> None:
         menu = tk.Menu(widget, tearoff=0)
@@ -1088,8 +1118,10 @@ class EISParserGUI(tk.Tk):
             out_xlsx=config["out_xlsx"],
             headed=config["headed"],
             trace=config["trace"],
-            timeout_ms=90000,
-            expand_rounds=5,
+            timeout_ms=self.timeout_ms_var.get(),
+            expand_rounds=self.expand_rounds_var.get(),
+            page_load_delay=self.page_load_delay_var.get(),
+            expand_delay=self.expand_delay_var.get(),
         )
         try:
             rc = asyncio.run(run(ns, log_fn=self._thread_log))
