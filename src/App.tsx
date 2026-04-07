@@ -189,26 +189,27 @@ export default function App() {
           </p>
 
           <div className="mt-4 overflow-x-auto text-sm">
-            <table className="min-w-full border-collapse">
+            <table className="min-w-full border-collapse table-auto">
               <thead>
-                <tr className="text-left text-slate-400">
-                  <th className="border-b border-slate-700 p-2">Наименование</th>
-                  <th className="border-b border-slate-700 p-2">МНН</th>
-                  <th className="border-b border-slate-700 p-2">ТН</th>
-                  <th className="border-b border-slate-700 p-2">РУ</th>
-                  <th className="border-b border-slate-700 p-2">Дозировка</th>
-                  <th className="border-b border-slate-700 p-2">Сумма, руб</th>
+                <tr className="text-left text-slate-400 sticky top-0 bg-slate-900/60">
+                  <th className="border-b border-slate-700 p-2 min-w-[280px]">Наименование</th>
+                  <th className="border-b border-slate-700 p-2 min-w-[150px]">МНН</th>
+                  <th className="border-b border-slate-700 p-2 min-w-[150px]">ТН</th>
+                  <th className="border-b border-slate-700 p-2 min-w-[180px]">РУ</th>
+                  <th className="border-b border-slate-700 p-2 min-w-[200px]">Форма выпуска</th>
+                  <th className="border-b border-slate-700 p-2 min-w-[120px]">Дозировка</th>
+                  <th className="border-b border-slate-700 p-2 min-w-[100px]">Сумма, руб</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredRows.map((row) => (
-                  <tr key={row.ru} className="[animation:fadeIn_.45s_ease-out]">
-                    <td className="border-b border-slate-800 p-2">{row.name}</td>
+                  <tr key={row.ru} className="[animation:fadeIn_.45s_ease-out] hover:bg-slate-800/30">
+                    <td className="border-b border-slate-800 p-2 max-w-xs truncate">{row.name}</td>
                     <td className="border-b border-slate-800 p-2">{row.mnn}</td>
                     <td className="border-b border-slate-800 p-2">{row.tradeName}</td>
-                    <td className="border-b border-slate-800 p-2">{row.ru}</td>
-                    <td className="border-b border-slate-800 p-2">{row.dose}</td>
-                    <td className="border-b border-slate-800 p-2">{row.sum}</td>
+                    <td className="border-b border-slate-800 p-2 font-mono text-xs break-all">{row.ru}</td>
+                    <td className="border-b border-slate-800 p-2 max-w-xs truncate">{row.dose}</td>
+                    <td className="border-b border-slate-800 p-2 text-right">{row.sum}</td>
                   </tr>
                 ))}
               </tbody>

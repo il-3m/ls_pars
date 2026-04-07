@@ -104,9 +104,11 @@ class ParseRecord:
 
 
 class EISParser:
-    def __init__(self, timeout_ms: int = 60000, expand_rounds: int = 4) -> None:
+    def __init__(self, timeout_ms: int = 60000, expand_rounds: int = 4, page_load_delay: int = 1200, expand_delay: int = 800) -> None:
         self.timeout_ms = timeout_ms
         self.expand_rounds = expand_rounds
+        self.page_load_delay = page_load_delay
+        self.expand_delay = expand_delay
 
     async def parse_url(
         self,
@@ -123,7 +125,7 @@ class EISParser:
         parsed_dir.mkdir(parents=True, exist_ok=True)
 
         await page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms)
-        await page.wait_for_timeout(1200)
+        await page.wait_for_timeout(self.page_load_delay)
 
         await self._close_overlays(page)
         frame = await self._find_frame_with_objects(page)
@@ -131,7 +133,7 @@ class EISParser:
             raise RuntimeError("Не найден контекст с блоком 'Объекты закупки'")
 
         await self._expand_objects(frame)
-        await page.wait_for_timeout(800)
+        await page.wait_for_timeout(self.expand_delay)
 
         html = await frame.content()
         (raw_dir / "objects_frame.html").write_text(html, encoding="utf-8")
@@ -837,7 +839,12 @@ def _log_line(log_fn, text: str, *, is_error: bool = False) -> None:
 
 
 async def run(args: argparse.Namespace, log_fn=None) -> int:
-    parser = EISParser(timeout_ms=args.timeout_ms, expand_rounds=args.expand_rounds)
+    parser = EISParser(
+        timeout_ms=args.timeout_ms,
+        expand_rounds=args.expand_rounds,
+        page_load_delay=getattr(args, 'page_load_delay', 1200),
+        expand_delay=getattr(args, 'expand_delay', 800),
+    )
     archive_dir = Path(args.archive_dir)
     urls = _read_urls(args.url, Path(args.url_file) if args.url_file else None)
 
@@ -903,6 +910,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--trace", action="store_true", help="Save Playwright trace.zip")
     p.add_argument("--timeout-ms", type=int, default=60000, help="Navigation timeout")
     p.add_argument("--expand-rounds", type=int, default=4, help="Expand passes for nested rows")
+    p.add_argument("--page-load-delay", type=int, default=1200, help="Delay after page load (ms)")
+    p.add_argument("--expand-delay", type=int, default=800, help="Delay after expand operations (ms)")
     return p
 
 
@@ -925,6 +934,10 @@ class EISParserGUI(tk.Tk):
         self.xlsx_var = tk.StringVar(value="export/result.xlsx")
         self.trace_var = tk.BooleanVar(value=True)
         self.headed_var = tk.BooleanVar(value=False)
+        self.timeout_ms_var = tk.IntVar(value=90000)
+        self.expand_rounds_var = tk.IntVar(value=5)
+        self.page_load_delay_var = tk.IntVar(value=1200)
+        self.expand_delay_var = tk.IntVar(value=800)
 
         self.all_rows: list[dict[str, str]] = []
         self.filtered_rows: list[dict[str, str]] = []
@@ -951,6 +964,15 @@ class EISParserGUI(tk.Tk):
         self._row_input(controls, "Папка архива", self.archive_var)
         self._row_input(controls, "CSV файл", self.csv_var)
         self._row_input(controls, "XLSX файл", self.xlsx_var)
+
+        # Timing settings frame
+        timing_frame = ttk.LabelFrame(controls, text="Тайминги и скорость обработки", padding=6)
+        timing_frame.pack(fill=tk.X, pady=(6, 0))
+        
+        self._row_spinbox(timing_frame, "Таймаут загрузки (мс):", self.timeout_ms_var, from_=30000, to=300000, step=10000)
+        self._row_spinbox(timing_frame, "Раунды раскрытия:", self.expand_rounds_var, from_=1, to=10, step=1)
+        self._row_spinbox(timing_frame, "Задержка после загрузки (мс):", self.page_load_delay_var, from_=200, to=5000, step=100)
+        self._row_spinbox(timing_frame, "Задержка раскрытия (мс):", self.expand_delay_var, from_=200, to=3000, step=100)
 
         toggles = ttk.Frame(controls)
         toggles.pack(fill=tk.X, pady=(4, 0))
@@ -1014,6 +1036,14 @@ class EISParserGUI(tk.Tk):
             ).pack(side=tk.LEFT, padx=(6, 0))
         if on_change:
             ent.bind("<KeyRelease>", lambda _e: on_change())
+
+    def _row_spinbox(self, parent, label, variable, from_=0, to=100, step=1) -> None:
+        row = ttk.Frame(parent)
+        row.pack(fill=tk.X, pady=2)
+        ttk.Label(row, text=label, width=28).pack(side=tk.LEFT)
+        spin = ttk.Spinbox(row, textvariable=variable, from_=from_, to=to, increment=step, width=15)
+        spin.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        spin.bind("<FocusIn>", lambda _e: spin.selection_range(0, tk.END))
 
     def _add_context_menu(self, widget: ttk.Entry) -> None:
         menu = tk.Menu(widget, tearoff=0)
@@ -1088,8 +1118,10 @@ class EISParserGUI(tk.Tk):
             out_xlsx=config["out_xlsx"],
             headed=config["headed"],
             trace=config["trace"],
-            timeout_ms=90000,
-            expand_rounds=5,
+            timeout_ms=self.timeout_ms_var.get(),
+            expand_rounds=self.expand_rounds_var.get(),
+            page_load_delay=self.page_load_delay_var.get(),
+            expand_delay=self.expand_delay_var.get(),
         )
         try:
             rc = asyncio.run(run(ns, log_fn=self._thread_log))
@@ -1447,6 +1479,7 @@ EXTRACT_SCRIPT = r"""
       if (!/ТОРГОВОЕ НАИМЕНОВАНИЕ/.test(headerLine) || !/НОМЕР РУ/.test(headerLine)) continue;
       
       // Find column indices by matching header text explicitly
+      // Note: first data row has chevron cell at index 0, so data columns are shifted by +1 relative to headers
       for (let i = 0; i < headers.length; i++) {
         const h = headers[i];
         // Match exact header names to avoid confusion with similar labels
@@ -1454,6 +1487,7 @@ EXTRACT_SCRIPT = r"""
         if (/НОМЕР\s+РУ/.test(h)) hMap.ru = i;
         if (/ЛЕКАРСТВЕННАЯ\s+ФОРМА/.test(h)) hMap.form = i;
         if (/ДОЗИРОВКА/.test(h)) hMap.dose = i;
+        if (/КОЛИЧЕСТВО В ПОТРЕБ\.? ЕДИНИЦЕ/i.test(h)) hMap.qty = i;
       }
       headerFound = true;
       break;
@@ -1462,33 +1496,90 @@ EXTRACT_SCRIPT = r"""
     if (!headerFound) return [];
 
     const details = [];
-    for (const tr of rows) {
+    for (let ri = 0; ri < rows.length; ri++) {
+      const tr = rows[ri];
       const cols = Array.from(tr.querySelectorAll('td')).map((td) => text(td));
       if (!cols.length) continue;
       const rowText = clean(text(tr));
       const rowUp = rowText.toUpperCase();
       if (rowUp.includes('ТОРГОВОЕ НАИМЕНОВАНИЕ') || rowUp.includes('НОМЕР РУ')) continue;
 
+      // Check if this is a detail row (contractSubjectDrugInfo) - skip for main data but extract meta
+      const isDetailRow = tr.className && tr.className.includes('contractSubjectDrugInfo');
+      
+      if (isDetailRow) {
+        // This is a detail row - extract holder, manufacturer, etc. from sections
+        // Look for the last added detail record and update it
+        if (details.length > 0) {
+          const lastRec = details[details.length - 1];
+          const sections = tr.querySelectorAll('.blockInfo__section');
+          sections.forEach(sec => {
+            const titleEl = sec.querySelector('.section__title');
+            const infoEl = sec.querySelector('.section__info');
+            if (!titleEl || !infoEl) return;
+            const title = clean(text(titleEl));
+            const info = clean(text(infoEl));
+            if (!info) return;
+            
+            const titleUp = title.toUpperCase();
+            if (titleUp.includes('ДЕРЖАТЕЛЯ') || titleUp.includes('ВЛАДЕЛЕЦ')) {
+              if (!lastRec.holder_name) lastRec.holder_name = info;
+            } else if (titleUp.includes('ПРОИЗВОДИТЕЛЯ')) {
+              if (!lastRec.manufacturer_name) lastRec.manufacturer_name = info;
+            } else if (titleUp.includes('СТРАНА ПРОИЗВОДИТЕЛЯ')) {
+              if (!lastRec.manufacturer_country) lastRec.manufacturer_country = info;
+            } else if (titleUp.includes('ВИД ПЕРВИЧНОЙ УПАКОВКИ')) {
+              if (!lastRec.primary_package_type) lastRec.primary_package_type = info;
+            } else if (titleUp.includes('КОЛИЧЕСТВО ЛЕКАРСТВЕННЫХ ФОРМ')) {
+              if (!lastRec.qty_forms_primary) lastRec.qty_forms_primary = info;
+            } else if (titleUp.includes('КОЛИЧЕСТВО ПЕРВИЧНЫХ УПАКОВОК')) {
+              if (!lastRec.qty_primary_packages) lastRec.qty_primary_packages = info;
+            } else if (titleUp.includes('КОЛИЧЕСТВО ПОТРЕБИТЕЛЬСКИХ ЕДИНИЦ')) {
+              if (!lastRec.qty_consumer_units) lastRec.qty_consumer_units = info;
+            } else if (titleUp.includes('КОМПЛЕКТНОСТЬ')) {
+              if (!lastRec.consumer_package_completeness) lastRec.consumer_package_completeness = info;
+            }
+          });
+        }
+        continue;
+      }
+
+      // Skip rows that don't have the chevron cell (not data rows)
+      const firstTd = tr.querySelector('td');
+      const hasChevron = cols.length > 0 && (cols[0] === '' || (firstTd && firstTd.className && firstTd.className.includes('chevronRight')));
+      if (!hasChevron) continue;
+
       const rec = blank();
       
-      // Use mapped indices with fallbacks based on typical nested table structure:
-      // [chevron(empty), trade_name, ru, form, dose, qty]
-      const tradeRaw = hMap.trade !== undefined ? cols[hMap.trade] : (cols[1] || '');
-      const ruRaw = hMap.ru !== undefined ? cols[hMap.ru] : (cols[2] || '');
-      const formRaw = hMap.form !== undefined ? cols[hMap.form] : (cols[3] || '');
-      const doseRaw = hMap.dose !== undefined ? cols[hMap.dose] : (cols[4] || '');
+      // Data columns start at index 1 (index 0 is chevron)
+      // Map header indices to data indices: data_index = header_index + 1
+      // But since we're reading from td elements only, and header had th elements,
+      // the mapping is direct: cols[1] = trade, cols[2] = ru, cols[3] = form, cols[4] = dose, cols[5] = qty
+      const tradeRaw = cols[1] || '';
+      const ruRaw = cols[2] || '';
+      const formRaw = cols[3] || '';
+      const doseRaw = cols[4] || '';
+      const qtyRaw = cols[5] || '';
 
       // Skip cells that contain meta blob (МНН и форма выпуска в соответствии с ГРЛС...)
       rec.trade_name = /МНН\s*:/i.test(tradeRaw) ? '' : clean(tradeRaw);
-      rec.ru = clean((clean(ruRaw).match(rx.ru) || [])[1] || ruRaw || '');
+      
+      // Fix RU extraction: take full text from TD, not just regex match
+      rec.ru = clean(ruRaw);
+      
       rec.release_form = clean(formRaw);
-      rec.dose = clean((clean(doseRaw).match(rx.dose) || [])[1] || doseRaw || '');
-
-      // Extract meta fields from the row text (including from cells with long meta blobs)
-      const meta = extractMetaFromText(rowText);
-      Object.keys(meta).forEach((k) => {
-        if (!rec[k]) rec[k] = clean(meta[k]);
-      });
+      
+      // Dose may be split across spans - take full text
+      rec.dose = clean(doseRaw);
+      
+      // Quantity: try column 5 first, fallback to regex search
+      let qtyVal = clean(qtyRaw);
+      if (!qtyVal || qtyVal.length < 1) {
+        // Fallback: search for number in the cell
+        const numMatch = qtyRaw.match(/\d[\d\s]*/);
+        if (numMatch) qtyVal = clean(numMatch[0]);
+      }
+      if (qtyVal) rec.qty_need = qtyVal;
 
       if (Object.values(rec).some(Boolean)) details.push(rec);
     }
