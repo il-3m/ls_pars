@@ -37,13 +37,15 @@ FIELD_ORDER = [
     "category_ls",
     "okpd2",
     "country",
+    "mnn",
     "trade_name",
     "ru",
     "release_form",
     "dose",
-    "qty_need",
+    "qty_consumption_unit",
     "price_per_unit",
     "sum_rub",
+    "nds",
     "holder_name",
     "manufacturer_name",
     "manufacturer_country",
@@ -59,13 +61,15 @@ EXPORT_HEADERS_RU = {
     "category_ls": "Категории ЛС",
     "okpd2": "ОКПД2",
     "country": "Страна происхождения",
+    "mnn": "МНН (ГРЛС)",
     "trade_name": "Торговое наименование",
     "ru": "РУ",
     "release_form": "Форма выпуска",
     "dose": "Дозировка",
-    "qty_need": "Количество товара, объем работы, услуги, Единица измерения",
+    "qty_consumption_unit": "Количество в потреб. единице измерения",
     "price_per_unit": "Цена за единицу измерения, ₽",
     "sum_rub": "Сумма, ₽",
+    "nds": "НДС",
     "holder_name": "Наименование держателя или владельца РУ",
     "manufacturer_name": "Наименование производителя",
     "manufacturer_country": "Страна производителя",
@@ -83,13 +87,15 @@ class ParseRecord:
     category_ls: str = ""
     okpd2: str = ""
     country: str = ""
+    mnn: str = ""
     trade_name: str = ""
     ru: str = ""
     release_form: str = ""
     dose: str = ""
-    qty_need: str = ""
+    qty_consumption_unit: str = ""
     price_per_unit: str = ""
     sum_rub: str = ""
+    nds: str = ""
     holder_name: str = ""
     manufacturer_name: str = ""
     manufacturer_country: str = ""
@@ -256,10 +262,10 @@ class EISParser:
                     setattr(rec, field, value)
 
             # If qty column contains a long block, keep only real qty text.
-            if len(rec.qty_need) > 80:
+            if len(rec.qty_consumption_unit) > 80:
                 qty_candidate = _extract_qty_from_blob(blob)
                 if qty_candidate:
-                    rec.qty_need = qty_candidate
+                    rec.qty_consumption_unit = qty_candidate
 
         # Sometimes completeness contains a tail with item title and compact top-row values.
         if rec.consumer_package_completeness and (
@@ -292,8 +298,8 @@ class EISParser:
             rec.dose = _extract_dose(blob)
 
         # Quantity/price/sum should come from top compact block, not from metadata text.
-        if _looks_like_meta_blob(rec.qty_need) or "СТРАНА ПРОИСХОЖДЕНИЯ" in rec.qty_need.upper():
-            rec.qty_need = ""
+        if _looks_like_meta_blob(rec.qty_consumption_unit) or "СТРАНА ПРОИСХОЖДЕНИЯ" in rec.qty_consumption_unit.upper():
+            rec.qty_consumption_unit = ""
 
         if rec.price_per_unit and not _looks_like_price(rec.price_per_unit):
             rec.price_per_unit = ""
@@ -302,15 +308,15 @@ class EISParser:
             rec.sum_rub = ""
 
         compact = _extract_compact_values(blob)
-        if not rec.qty_need and compact.get("qty_need"):
-            rec.qty_need = compact["qty_need"]
+        if not rec.qty_consumption_unit and compact.get("qty_consumption_unit"):
+            rec.qty_consumption_unit = compact["qty_consumption_unit"]
         if not rec.price_per_unit and compact.get("price_per_unit"):
             rec.price_per_unit = compact["price_per_unit"]
         if not rec.sum_rub and compact.get("sum_rub"):
             rec.sum_rub = compact["sum_rub"]
 
-        if not rec.qty_need:
-            rec.qty_need = _extract_qty_from_blob(blob)
+        if not rec.qty_consumption_unit:
+            rec.qty_consumption_unit = _extract_qty_from_blob(blob)
 
         if not rec.price_per_unit:
             rec.price_per_unit = _extract_price(blob)
@@ -375,8 +381,8 @@ class EISParser:
             rec.sum_rub = ""
 
         compact = _extract_compact_values(row_blob)
-        if not rec.qty_need and compact.get("qty_need"):
-            rec.qty_need = compact["qty_need"]
+        if not rec.qty_consumption_unit and compact.get("qty_consumption_unit"):
+            rec.qty_consumption_unit = compact["qty_consumption_unit"]
         if not rec.price_per_unit and compact.get("price_per_unit"):
             rec.price_per_unit = compact["price_per_unit"]
         if not rec.sum_rub and compact.get("sum_rub"):
@@ -489,8 +495,8 @@ class EISParser:
                 if not rec.category_ls:
                     rec.category_ls = _clean(re.sub(r"\(\d{2}\.\d{2}\.\d{2}\.\d{3}\)", "", part))
                 continue
-            if not rec.qty_need and _looks_like_qty_text(part):
-                rec.qty_need = part
+            if not rec.qty_consumption_unit and _looks_like_qty_text(part):
+                rec.qty_consumption_unit = part
                 continue
             if not rec.price_per_unit and _looks_like_price(part):
                 rec.price_per_unit = _extract_price(part)
@@ -618,7 +624,7 @@ def _looks_like_ru_code(text: str) -> bool:
 
 def _extract_compact_values(text: str) -> dict[str, str]:
     src = _clean(text)
-    out = {"qty_need": "", "price_per_unit": "", "sum_rub": ""}
+    out = {"qty_consumption_unit": "", "price_per_unit": "", "sum_rub": ""}
     if not src:
         return out
 
@@ -630,10 +636,10 @@ def _extract_compact_values(text: str) -> dict[str, str]:
         if not out["sum_rub"] and "НДС" in up:
             out["sum_rub"] = _extract_sum(part)
             continue
-        if not out["qty_need"] and _looks_like_qty_text(part):
+        if not out["qty_consumption_unit"] and _looks_like_qty_text(part):
             if len(part) > 100 and re.search(r"\d+\.\s+", part):
                 continue
-            out["qty_need"] = part
+            out["qty_consumption_unit"] = part
             continue
         if not out["price_per_unit"] and _looks_like_price(part):
             out["price_per_unit"] = _extract_price(part)
@@ -641,12 +647,12 @@ def _extract_compact_values(text: str) -> dict[str, str]:
         if has_vat and not out["sum_rub"] and _looks_like_sum(part):
             out["sum_rub"] = _extract_sum(part)
 
-    if not out["qty_need"]:
-        out["qty_need"] = _extract_qty_from_blob(src)
-    if out["qty_need"] and len(out["qty_need"]) > 120:
+    if not out["qty_consumption_unit"]:
+        out["qty_consumption_unit"] = _extract_qty_from_blob(src)
+    if out["qty_consumption_unit"] and len(out["qty_consumption_unit"]) > 120:
         # Some pages leak full item description into qty cell; keep only unit text.
-        trimmed_qty = _extract_qty_from_blob(out["qty_need"])
-        out["qty_need"] = trimmed_qty if trimmed_qty and len(trimmed_qty) < len(out["qty_need"]) else ""
+        trimmed_qty = _extract_qty_from_blob(out["qty_consumption_unit"])
+        out["qty_consumption_unit"] = trimmed_qty if trimmed_qty and len(trimmed_qty) < len(out["qty_consumption_unit"]) else ""
 
     # Global fallback for rows where compact values are merged without "|" delimiters.
     if has_vat and not out["sum_rub"]:
@@ -1241,13 +1247,15 @@ EXTRACT_SCRIPT = r"""
     category_ls: '',
     okpd2: '',
     country: '',
+    mnn: '',
     trade_name: '',
     ru: '',
     release_form: '',
     dose: '',
-    qty_need: '',
+    qty_consumption_unit: '',
     price_per_unit: '',
     sum_rub: '',
+    nds: '',
     holder_name: '',
     manufacturer_name: '',
     manufacturer_country: '',
@@ -1388,7 +1396,7 @@ EXTRACT_SCRIPT = r"""
       // Column 4 (index 4) typically contains quantity with unit
       const qtyCell = clean(cols[4] || '');
       if (qtyCell && looksLikeQty(qtyCell)) {
-        rec.qty_need = extractQty(qtyCell) || qtyCell;
+        rec.qty_consumption_unit = extractQty(qtyCell) || qtyCell;
         foundQty = true;
       }
       
@@ -1402,6 +1410,11 @@ EXTRACT_SCRIPT = r"""
       const sumCell = clean(cols[6] || '');
       if (sumCell && /НДС/i.test(sumCell)) {
         rec.sum_rub = extractSum(sumCell);
+        // Extract VAT rate from the cell
+        const ndsMatch = sumCell.match(/НДС[:\\s]*([\\d]+%?)/i);
+        if (ndsMatch) {
+          rec.nds = ndsMatch[1].includes('%') ? ndsMatch[1] : ndsMatch[1] + '%';
+        }
       }
       
       // For 9-column layouts, check alternative positions
@@ -1409,8 +1422,8 @@ EXTRACT_SCRIPT = r"""
         // In some layouts, qty might be in a different position
         for (let i = 4; i < cols.length; i++) {
           const cell = clean(cols[i] || '');
-          if (!rec.qty_need && looksLikeQty(cell)) {
-            rec.qty_need = extractQty(cell) || cell;
+          if (!rec.qty_consumption_unit && looksLikeQty(cell)) {
+            rec.qty_consumption_unit = extractQty(cell) || cell;
           }
           if (!rec.price_per_unit && looksLikePrice(cell)) {
             rec.price_per_unit = cell;
@@ -1443,10 +1456,15 @@ EXTRACT_SCRIPT = r"""
       if (up === 'ТОВАР') continue;
       if (up.includes('НДС')) {
         if (!rec.sum_rub) rec.sum_rub = extractSum(token);
+        // Extract VAT rate
+        const ndsMatch = token.match(/НДС[:\\s]*([\\d]+%?)/i);
+        if (ndsMatch && !rec.nds) {
+          rec.nds = ndsMatch[1].includes('%') ? ndsMatch[1] : ndsMatch[1] + '%';
+        }
         continue;
       }
-      if (!rec.qty_need && looksLikeQty(token)) {
-        rec.qty_need = extractQty(token) || clean(token);
+      if (!rec.qty_consumption_unit && looksLikeQty(token)) {
+        rec.qty_consumption_unit = extractQty(token) || clean(token);
       }
       if (!rec.price_per_unit && (looksLikePrice(token) || /\d{1,6}[.,]\d{2,7}/.test(token))) {
         rec.price_per_unit = extractPrice(token);
@@ -1454,9 +1472,16 @@ EXTRACT_SCRIPT = r"""
       // Sum is exported only when VAT label is explicitly present.
     }
 
-    if (!rec.qty_need) rec.qty_need = extractQty(rowText);
+    if (!rec.qty_consumption_unit) rec.qty_consumption_unit = extractQty(rowText);
     if (!rec.price_per_unit) rec.price_per_unit = extractPrice(rowText);
-    if (!rec.sum_rub && /НДС/i.test(rowText)) rec.sum_rub = extractSum(rowText);
+    if (!rec.sum_rub && /НДС/i.test(rowText)) {
+      rec.sum_rub = extractSum(rowText);
+      // Extract VAT rate from row text
+      const ndsMatch = rowText.match(/НДС[:\\s]*([\\d]+%?)/i);
+      if (ndsMatch && !rec.nds) {
+        rec.nds = ndsMatch[1].includes('%') ? ndsMatch[1] : ndsMatch[1] + '%';
+      }
+    }
 
     if (!rec.category_ls) {
       const c2 = clean(cols[1] || '');
@@ -1522,7 +1547,9 @@ EXTRACT_SCRIPT = r"""
             if (!info) return;
             
             const titleUp = title.toUpperCase();
-            if (titleUp.includes('ДЕРЖАТЕЛЯ') || titleUp.includes('ВЛАДЕЛЕЦ')) {
+            if (/МЕЖДУНАРОДНОЕ.*НАИМЕНОВАНИЕ/.test(titleUp)) {
+              if (!lastRec.mnn) lastRec.mnn = info;
+            } else if (titleUp.includes('ДЕРЖАТЕЛЯ') || titleUp.includes('ВЛАДЕЛЕЦ')) {
               if (!lastRec.holder_name) lastRec.holder_name = info;
             } else if (titleUp.includes('ПРОИЗВОДИТЕЛЯ')) {
               if (!lastRec.manufacturer_name) lastRec.manufacturer_name = info;
@@ -1579,7 +1606,7 @@ EXTRACT_SCRIPT = r"""
         const numMatch = qtyRaw.match(/\d[\d\s]*/);
         if (numMatch) qtyVal = clean(numMatch[0]);
       }
-      if (qtyVal) rec.qty_need = qtyVal;
+      if (qtyVal) rec.qty_consumption_unit = qtyVal;
 
       if (Object.values(rec).some(Boolean)) details.push(rec);
     }
@@ -1606,10 +1633,15 @@ EXTRACT_SCRIPT = r"""
     for (const d of details) {
       const rec = {
         ...top,
+        mnn: clean(d.mnn || top.mnn),
         trade_name: clean(d.trade_name || top.trade_name),
         ru: clean(d.ru || top.ru),
         release_form: clean(d.release_form || top.release_form),
         dose: clean(d.dose || top.dose),
+        qty_consumption_unit: clean(d.qty_consumption_unit || top.qty_consumption_unit),
+        price_per_unit: clean(d.price_per_unit || top.price_per_unit),
+        sum_rub: clean(d.sum_rub || top.sum_rub),
+        nds: clean(d.nds || top.nds),
         holder_name: clean(d.holder_name || top.holder_name),
         manufacturer_name: clean(d.manufacturer_name || top.manufacturer_name),
         manufacturer_country: clean(d.manufacturer_country || top.manufacturer_country),
@@ -1631,13 +1663,15 @@ EXTRACT_SCRIPT = r"""
       rec.category_ls,
       rec.okpd2,
       rec.country,
+      rec.mnn,
       rec.trade_name,
       rec.ru,
       rec.release_form,
       rec.dose,
-      rec.qty_need,
+      rec.qty_consumption_unit,
       rec.price_per_unit,
       rec.sum_rub,
+      rec.nds,
       rec.holder_name,
       rec.manufacturer_name,
       rec.manufacturer_country,
