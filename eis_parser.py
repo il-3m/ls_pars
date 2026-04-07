@@ -1479,6 +1479,7 @@ EXTRACT_SCRIPT = r"""
       if (!/ТОРГОВОЕ НАИМЕНОВАНИЕ/.test(headerLine) || !/НОМЕР РУ/.test(headerLine)) continue;
       
       // Find column indices by matching header text explicitly
+      // Note: first data row has chevron cell at index 0, so data columns are shifted by +1 relative to headers
       for (let i = 0; i < headers.length; i++) {
         const h = headers[i];
         // Match exact header names to avoid confusion with similar labels
@@ -1501,14 +1502,20 @@ EXTRACT_SCRIPT = r"""
       const rowUp = rowText.toUpperCase();
       if (rowUp.includes('ТОРГОВОЕ НАИМЕНОВАНИЕ') || rowUp.includes('НОМЕР РУ')) continue;
 
+      // Skip rows that don't have the chevron cell (not data rows)
+      const hasChevron = cols.length > 0 && (cols[0] === '' || /chevronRight/i.test(tr.querySelector('td')?.className || ''));
+      if (!hasChevron) continue;
+
       const rec = blank();
       
-      // Use mapped indices with fallbacks based on typical nested table structure:
-      // [chevron(empty), trade_name, ru, form, dose, qty]
-      const tradeRaw = hMap.trade !== undefined ? cols[hMap.trade] : (cols[1] || '');
-      const ruRaw = hMap.ru !== undefined ? cols[hMap.ru] : (cols[2] || '');
-      const formRaw = hMap.form !== undefined ? cols[hMap.form] : (cols[3] || '');
-      const doseRaw = hMap.dose !== undefined ? cols[hMap.dose] : (cols[4] || '');
+      // Data columns start at index 1 (index 0 is chevron)
+      // Map header indices to data indices: data_index = header_index + 1
+      // But since we're reading from td elements only, and header had th elements,
+      // the mapping is direct: cols[1] = trade, cols[2] = ru, cols[3] = form, cols[4] = dose, cols[5] = qty
+      const tradeRaw = cols[1] || '';
+      const ruRaw = cols[2] || '';
+      const formRaw = cols[3] || '';
+      const doseRaw = cols[4] || '';
 
       // Skip cells that contain meta blob (МНН и форма выпуска в соответствии с ГРЛС...)
       rec.trade_name = /МНН\s*:/i.test(tradeRaw) ? '' : clean(tradeRaw);
