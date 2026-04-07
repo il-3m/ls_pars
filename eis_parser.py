@@ -1380,11 +1380,70 @@ EXTRACT_SCRIPT = r"""
     return isTopRow(tr);
   });
 
+  const extractMnnFromExpandedRow = (tr) => {
+    // Look for MNN in expanded sibling row (ktru-tr-XXXXX pattern)
+    let nextRow = tr.nextElementSibling;
+    while (nextRow && nextRow.tagName === 'TR') {
+      const rowId = nextRow.id || '';
+      if (rowId.startsWith('ktru-tr-')) {
+        // This is an expanded detail row
+        const sections = nextRow.querySelectorAll('.blockInfo__section');
+        for (const sec of sections) {
+          const titleEl = sec.querySelector('.section__title');
+          const infoEl = sec.querySelector('.section__info');
+          if (!titleEl || !infoEl) continue;
+          const title = clean(text(titleEl));
+          const info = clean(text(infoEl));
+          if (!info) continue;
+          
+          const titleUp = title.toUpperCase();
+          if (/МЕЖДУНАРОДНОЕ.*НАИМЕНОВАНИЕ/.test(titleUp)) {
+            return { mnn: info, row: nextRow };
+          }
+        }
+        break;
+      }
+      nextRow = nextRow.nextElementSibling;
+    }
+    return { mnn: '', row: null };
+  };
+  
+  const extractManufacturerCountryFromExpandedRow = (expandedRow) => {
+    if (!expandedRow) return '';
+    const sections = expandedRow.querySelectorAll('.blockInfo__section');
+    for (const sec of sections) {
+      const titleEl = sec.querySelector('.section__title');
+      const infoEl = sec.querySelector('.section__info');
+      if (!titleEl || !infoEl) continue;
+      const title = clean(text(titleEl));
+      const info = clean(text(infoEl));
+      if (!info) continue;
+      
+      const titleUp = title.toUpperCase();
+      if (titleUp.includes('СТРАНА ПРОИЗВОДИТЕЛЯ')) {
+        return info;
+      }
+    }
+    return '';
+  };
+
   const parseTopRow = (tr) => {
     const rec = blank();
     const cols = Array.from(tr.querySelectorAll('td')).map((td) => text(td));
     const rowText = text(tr);
     rec.name = cols.map(extractName).find(Boolean) || extractName(rowText) || clean(cols[0] || '');
+
+    // Extract MNN from expanded sibling row
+    const { mnn, row: expandedRow } = extractMnnFromExpandedRow(tr);
+    if (mnn) {
+      rec.mnn = mnn;
+    }
+    
+    // Extract manufacturer country from expanded sibling row
+    const manufacturerCountry = extractManufacturerCountryFromExpandedRow(expandedRow);
+    if (manufacturerCountry) {
+      rec.manufacturer_country = manufacturerCountry;
+    }
 
     // Direct column mapping for quantity, price, and sum when we have enough columns
     // Typical structure: [empty, name+country, category+okpd2, "Товар", qty, price, sum+VAT]
@@ -1586,6 +1645,7 @@ EXTRACT_SCRIPT = r"""
       }
 
       // Check for MNN in the expanded block sections (not just contractSubjectDrugInfo rows)
+      // This code runs in the context of parseNestedTable, but we need to capture MNN/country from expanded sections
       const allSections = tr.querySelectorAll('.blockInfo__section');
       allSections.forEach(sec => {
         const titleEl = sec.querySelector('.section__title');
@@ -1597,9 +1657,10 @@ EXTRACT_SCRIPT = r"""
 
         const titleUp = title.toUpperCase();
         if (/МЕЖДУНАРОДНОЕ.*НАИМЕНОВАНИЕ/.test(titleUp)) {
-          if (!rec.mnn) rec.mnn = info;
+          // Store in a temporary variable to be merged later
+          window._tempMnn = window._tempMnn || info;
         } else if (titleUp.includes('СТРАНА ПРОИЗВОДИТЕЛЯ')) {
-          if (!rec.manufacturer_country) rec.manufacturer_country = info;
+          window._tempManufacturerCountry = window._tempManufacturerCountry || info;
         }
       });
 
@@ -1697,18 +1758,20 @@ EXTRACT_SCRIPT = r"""
     const tr = topRows[i];
     if (!tr) continue;
 
-    // Find next sibling row with hidden class that might contain expanded data
+    // Find next sibling row with ktru-tr-XXXXX id pattern that might contain expanded data
     let nextRow = tr.nextElementSibling;
     while (nextRow && nextRow.tagName === 'TR') {
-      const sections = nextRow.querySelectorAll('.blockInfo__section');
-      if (sections.length > 0) {
-        sections.forEach(sec => {
+      const rowId = nextRow.id || '';
+      if (rowId.startsWith('ktru-tr-')) {
+        // This is an expanded detail row - extract MNN and manufacturer country
+        const sections = nextRow.querySelectorAll('.blockInfo__section');
+        for (const sec of sections) {
           const titleEl = sec.querySelector('.section__title');
           const infoEl = sec.querySelector('.section__info');
-          if (!titleEl || !infoEl) return;
+          if (!titleEl || !infoEl) continue;
           const title = clean(text(titleEl));
           const info = clean(text(infoEl));
-          if (!info) return;
+          if (!info) continue;
 
           const titleUp = title.toUpperCase();
           if (/МЕЖДУНАРОДНОЕ.*НАИМЕНОВАНИЕ/.test(titleUp)) {
@@ -1716,7 +1779,7 @@ EXTRACT_SCRIPT = r"""
           } else if (titleUp.includes('СТРАНА ПРОИЗВОДИТЕЛЯ')) {
             if (!top.manufacturer_country) top.manufacturer_country = info;
           }
-        });
+        }
         break;
       }
       nextRow = nextRow.nextElementSibling;

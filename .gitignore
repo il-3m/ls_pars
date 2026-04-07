@@ -1,11 +1,1 @@
-```
-# Python cache
-__pycache__/
-
-# Dependencies
-node_modules/
-
-# Logs
-*.log
-
-```
+Nothing should be ignored based on the provided file changes. The only modified file is 'eis_parser.py', which is a source code file and should not be added to .gitignore. There are no build artifacts, dependencies, or temporary files in the changes that require ignoring.
