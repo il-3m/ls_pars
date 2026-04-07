@@ -1487,6 +1487,7 @@ EXTRACT_SCRIPT = r"""
         if (/НОМЕР\s+РУ/.test(h)) hMap.ru = i;
         if (/ЛЕКАРСТВЕННАЯ\s+ФОРМА/.test(h)) hMap.form = i;
         if (/ДОЗИРОВКА/.test(h)) hMap.dose = i;
+        if (/КОЛИЧЕСТВО В ПОТРЕБ\.? ЕДИНИЦЕ/i.test(h)) hMap.qty = i;
       }
       headerFound = true;
       break;
@@ -1495,15 +1496,57 @@ EXTRACT_SCRIPT = r"""
     if (!headerFound) return [];
 
     const details = [];
-    for (const tr of rows) {
+    for (let ri = 0; ri < rows.length; ri++) {
+      const tr = rows[ri];
       const cols = Array.from(tr.querySelectorAll('td')).map((td) => text(td));
       if (!cols.length) continue;
       const rowText = clean(text(tr));
       const rowUp = rowText.toUpperCase();
       if (rowUp.includes('ТОРГОВОЕ НАИМЕНОВАНИЕ') || rowUp.includes('НОМЕР РУ')) continue;
 
+      // Check if this is a detail row (contractSubjectDrugInfo) - skip for main data but extract meta
+      const isDetailRow = tr.className && tr.className.includes('contractSubjectDrugInfo');
+      
+      if (isDetailRow) {
+        // This is a detail row - extract holder, manufacturer, etc. from sections
+        // Look for the last added detail record and update it
+        if (details.length > 0) {
+          const lastRec = details[details.length - 1];
+          const sections = tr.querySelectorAll('.blockInfo__section');
+          sections.forEach(sec => {
+            const titleEl = sec.querySelector('.section__title');
+            const infoEl = sec.querySelector('.section__info');
+            if (!titleEl || !infoEl) return;
+            const title = clean(text(titleEl));
+            const info = clean(text(infoEl));
+            if (!info) return;
+            
+            const titleUp = title.toUpperCase();
+            if (titleUp.includes('ДЕРЖАТЕЛЯ') || titleUp.includes('ВЛАДЕЛЕЦ')) {
+              if (!lastRec.holder_name) lastRec.holder_name = info;
+            } else if (titleUp.includes('ПРОИЗВОДИТЕЛЯ')) {
+              if (!lastRec.manufacturer_name) lastRec.manufacturer_name = info;
+            } else if (titleUp.includes('СТРАНА ПРОИЗВОДИТЕЛЯ')) {
+              if (!lastRec.manufacturer_country) lastRec.manufacturer_country = info;
+            } else if (titleUp.includes('ВИД ПЕРВИЧНОЙ УПАКОВКИ')) {
+              if (!lastRec.primary_package_type) lastRec.primary_package_type = info;
+            } else if (titleUp.includes('КОЛИЧЕСТВО ЛЕКАРСТВЕННЫХ ФОРМ')) {
+              if (!lastRec.qty_forms_primary) lastRec.qty_forms_primary = info;
+            } else if (titleUp.includes('КОЛИЧЕСТВО ПЕРВИЧНЫХ УПАКОВОК')) {
+              if (!lastRec.qty_primary_packages) lastRec.qty_primary_packages = info;
+            } else if (titleUp.includes('КОЛИЧЕСТВО ПОТРЕБИТЕЛЬСКИХ ЕДИНИЦ')) {
+              if (!lastRec.qty_consumer_units) lastRec.qty_consumer_units = info;
+            } else if (titleUp.includes('КОМПЛЕКТНОСТЬ')) {
+              if (!lastRec.consumer_package_completeness) lastRec.consumer_package_completeness = info;
+            }
+          });
+        }
+        continue;
+      }
+
       // Skip rows that don't have the chevron cell (not data rows)
-      const hasChevron = cols.length > 0 && (cols[0] === '' || /chevronRight/i.test(tr.querySelector('td')?.className || ''));
+      const firstTd = tr.querySelector('td');
+      const hasChevron = cols.length > 0 && (cols[0] === '' || (firstTd && firstTd.className && firstTd.className.includes('chevronRight')));
       if (!hasChevron) continue;
 
       const rec = blank();
@@ -1516,18 +1559,27 @@ EXTRACT_SCRIPT = r"""
       const ruRaw = cols[2] || '';
       const formRaw = cols[3] || '';
       const doseRaw = cols[4] || '';
+      const qtyRaw = cols[5] || '';
 
       // Skip cells that contain meta blob (МНН и форма выпуска в соответствии с ГРЛС...)
       rec.trade_name = /МНН\s*:/i.test(tradeRaw) ? '' : clean(tradeRaw);
-      rec.ru = clean((clean(ruRaw).match(rx.ru) || [])[1] || ruRaw || '');
+      
+      // Fix RU extraction: take full text from TD, not just regex match
+      rec.ru = clean(ruRaw);
+      
       rec.release_form = clean(formRaw);
-      rec.dose = clean((clean(doseRaw).match(rx.dose) || [])[1] || doseRaw || '');
-
-      // Extract meta fields from the row text (including from cells with long meta blobs)
-      const meta = extractMetaFromText(rowText);
-      Object.keys(meta).forEach((k) => {
-        if (!rec[k]) rec[k] = clean(meta[k]);
-      });
+      
+      // Dose may be split across spans - take full text
+      rec.dose = clean(doseRaw);
+      
+      // Quantity: try column 5 first, fallback to regex search
+      let qtyVal = clean(qtyRaw);
+      if (!qtyVal || qtyVal.length < 1) {
+        // Fallback: search for number in the cell
+        const numMatch = qtyRaw.match(/\d[\d\s]*/);
+        if (numMatch) qtyVal = clean(numMatch[0]);
+      }
+      if (qtyVal) rec.qty_need = qtyVal;
 
       if (Object.values(rec).some(Boolean)) details.push(rec);
     }

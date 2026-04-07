@@ -192,12 +192,12 @@ export default function App() {
             <table className="min-w-full border-collapse table-auto">
               <thead>
                 <tr className="text-left text-slate-400 sticky top-0 bg-slate-900/60">
-                  <th className="border-b border-slate-700 p-2 min-w-[200px]">Наименование</th>
+                  <th className="border-b border-slate-700 p-2 min-w-[280px]">Наименование</th>
                   <th className="border-b border-slate-700 p-2 min-w-[150px]">МНН</th>
                   <th className="border-b border-slate-700 p-2 min-w-[150px]">ТН</th>
-                  <th className="border-b border-slate-700 p-2 min-w-[120px]">РУ</th>
-                  <th className="border-b border-slate-700 p-2 min-w-[150px]">Форма выпуска</th>
-                  <th className="border-b border-slate-700 p-2 min-w-[100px]">Дозировка</th>
+                  <th className="border-b border-slate-700 p-2 min-w-[180px]">РУ</th>
+                  <th className="border-b border-slate-700 p-2 min-w-[200px]">Форма выпуска</th>
+                  <th className="border-b border-slate-700 p-2 min-w-[120px]">Дозировка</th>
                   <th className="border-b border-slate-700 p-2 min-w-[100px]">Сумма, руб</th>
                 </tr>
               </thead>
@@ -207,9 +207,8 @@ export default function App() {
                     <td className="border-b border-slate-800 p-2 max-w-xs truncate">{row.name}</td>
                     <td className="border-b border-slate-800 p-2">{row.mnn}</td>
                     <td className="border-b border-slate-800 p-2">{row.tradeName}</td>
-                    <td className="border-b border-slate-800 p-2 font-mono text-xs">{row.ru}</td>
-                    <td className="border-b border-slate-800 p-2">{row.dose}</td>
-                    <td className="border-b border-slate-800 p-2">{row.dose}</td>
+                    <td className="border-b border-slate-800 p-2 font-mono text-xs break-all">{row.ru}</td>
+                    <td className="border-b border-slate-800 p-2 max-w-xs truncate">{row.dose}</td>
                     <td className="border-b border-slate-800 p-2 text-right">{row.sum}</td>
                   </tr>
                 ))}

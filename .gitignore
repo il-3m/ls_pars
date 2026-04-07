@@ -1,50 +1,63 @@
 ```
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
+*.pyc
+*.pyo
+*.pyd
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+env/
+venv/
+.venv/
+.venv.bak/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.pytest_cache/
+.mypy_cache/
 
 # Node.js
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+node_modules/
+dist/
+build/
+.nyc_output/
+coverage/
+*.lcov
 
-# Distribution / packaging
-.env
-.env.local
-.env.*
-
-# IDEs
+# IDE
 .vscode/
 .idea/
-
-# Logs
-*.log
+*.swp
+*.swo
+*.tmp
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Build outputs
-dist/
-build/
+# Environment
+.env
+.env.local
+*.env.*
+
+# Build artifacts
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.out
 target/
+.gradle/
 ```
