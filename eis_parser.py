@@ -1149,10 +1149,11 @@ class EISParserGUI(tk.Tk):
         try:
             rc = asyncio.run(run(ns, log_fn=self._thread_log))
         except Exception as exc:
-            self.after(0, lambda: self._append_log(f"Критическая ошибка: {exc}", is_error=True))
+            err_msg = str(exc)
+            self.after(0, lambda e=err_msg: self._append_log(f"Критическая ошибка: {e}", is_error=True))
             rc = 1
 
-        self.after(0, lambda: self._on_worker_done(rc, Path(ns.out_csv)))
+        self.after(0, lambda r=rc, p=Path(ns.out_csv): self._on_worker_done(r, p))
 
     def _on_worker_done(self, rc: int, csv_path: Path) -> None:
         self.run_btn.config(state=tk.NORMAL)
