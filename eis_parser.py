@@ -569,9 +569,26 @@ def _looks_like_price(text: str) -> bool:
 
 def _looks_like_sum(text: str) -> bool:
     src = _clean(text)
-    if "НДС" not in src.upper():
+    if not src:
         return False
-    return bool(re.search(r"\d{1,3}(?:\s\d{3})+,\d{2}|\d{4,},\d{2}", src))
+    # Сумма может быть указана с НДС или без явного указания НДС в тексте
+    # Проверяем наличие числа в формате суммы (с пробелами-разделителями тысяч и копейками)
+    has_sum_pattern = bool(re.search(r"\d{1,3}(?:\s\d{3})+,\d{2}|\d{4,},\d{2}", src))
+    has_vat = "НДС" in src.upper()
+    # Возвращаем True если есть паттерн суммы и либо есть НДС, либо число похоже на итоговую сумму
+    if has_vat:
+        return has_sum_pattern
+    # Если нет НДС в тексте, проверяем что это большое число (больше 1000)
+    if has_sum_pattern:
+        m = re.search(r"(\d{1,3}(?:\s\d{3})+,\d{2}|\d{4,},\d{2})", src)
+        if m:
+            num_str = m.group(1).replace(" ", "").replace(",", ".")
+            try:
+                if float(num_str) >= 1000:
+                    return True
+            except ValueError:
+                pass
+    return False
 
 
 def _extract_price(text: str) -> str:
