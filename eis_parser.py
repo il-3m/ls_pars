@@ -1380,11 +1380,70 @@ EXTRACT_SCRIPT = r"""
     return isTopRow(tr);
   });
 
+  const extractMnnFromExpandedRow = (tr) => {
+    // Look for MNN in expanded sibling row (ktru-tr-XXXXX pattern)
+    let nextRow = tr.nextElementSibling;
+    while (nextRow && nextRow.tagName === 'TR') {
+      const rowId = nextRow.id || '';
+      if (rowId.startsWith('ktru-tr-')) {
+        // This is an expanded detail row
+        const sections = nextRow.querySelectorAll('.blockInfo__section');
+        for (const sec of sections) {
+          const titleEl = sec.querySelector('.section__title');
+          const infoEl = sec.querySelector('.section__info');
+          if (!titleEl || !infoEl) continue;
+          const title = clean(text(titleEl));
+          const info = clean(text(infoEl));
+          if (!info) continue;
+          
+          const titleUp = title.toUpperCase();
+          if (/МЕЖДУНАРОДНОЕ.*НАИМЕНОВАНИЕ/.test(titleUp)) {
+            return { mnn: info, row: nextRow };
+          }
+        }
+        break;
+      }
+      nextRow = nextRow.nextElementSibling;
+    }
+    return { mnn: '', row: null };
+  };
+  
+  const extractManufacturerCountryFromExpandedRow = (expandedRow) => {
+    if (!expandedRow) return '';
+    const sections = expandedRow.querySelectorAll('.blockInfo__section');
+    for (const sec of sections) {
+      const titleEl = sec.querySelector('.section__title');
+      const infoEl = sec.querySelector('.section__info');
+      if (!titleEl || !infoEl) continue;
+      const title = clean(text(titleEl));
+      const info = clean(text(infoEl));
+      if (!info) continue;
+      
+      const titleUp = title.toUpperCase();
+      if (titleUp.includes('СТРАНА ПРОИЗВОДИТЕЛЯ')) {
+        return info;
+      }
+    }
+    return '';
+  };
+
   const parseTopRow = (tr) => {
     const rec = blank();
     const cols = Array.from(tr.querySelectorAll('td')).map((td) => text(td));
     const rowText = text(tr);
     rec.name = cols.map(extractName).find(Boolean) || extractName(rowText) || clean(cols[0] || '');
+
+    // Extract MNN from expanded sibling row
+    const { mnn, row: expandedRow } = extractMnnFromExpandedRow(tr);
+    if (mnn) {
+      rec.mnn = mnn;
+    }
+    
+    // Extract manufacturer country from expanded sibling row
+    const manufacturerCountry = extractManufacturerCountryFromExpandedRow(expandedRow);
+    if (manufacturerCountry) {
+      rec.manufacturer_country = manufacturerCountry;
+    }
 
     // Direct column mapping for quantity, price, and sum when we have enough columns
     // Typical structure: [empty, name+country, category+okpd2, "Товар", qty, price, sum+VAT]
@@ -1409,11 +1468,17 @@ EXTRACT_SCRIPT = r"""
       // Column 6 (index 6) typically contains sum with VAT info
       const sumCell = clean(cols[6] || '');
       if (sumCell && /НДС/i.test(sumCell)) {
-        rec.sum_rub = extractSum(sumCell);
-        // Extract VAT rate from the cell
-        const ndsMatch = sumCell.match(/НДС[:\\s]*([\\d]+%?)/i);
+        // Extract sum - first number with comma and 2 decimals before НДС
+        const sumMatch = sumCell.match(/(\d{1,3}(?:\s\d{3})+,\d{2}|\d+,\d{2})/);
+        if (sumMatch) {
+          rec.sum_rub = clean(sumMatch[1]);
+        }
+        // Extract VAT rate from the cell - look for percentage after НДС
+        const ndsMatch = sumCell.match(/НДС[:\s]*(\d+\s*%?)/i);
         if (ndsMatch) {
-          rec.nds = ndsMatch[1].includes('%') ? ndsMatch[1] : ndsMatch[1] + '%';
+          let ndsVal = clean(ndsMatch[1]);
+          if (!ndsVal.includes('%')) ndsVal = ndsVal + '%';
+          rec.nds = ndsVal;
         }
       }
       
@@ -1455,11 +1520,16 @@ EXTRACT_SCRIPT = r"""
       }
       if (up === 'ТОВАР') continue;
       if (up.includes('НДС')) {
-        if (!rec.sum_rub) rec.sum_rub = extractSum(token);
+        if (!rec.sum_rub) {
+          const sumMatch = token.match(/(\d{1,3}(?:\s\d{3})+,\d{2}|\d+,\d{2})/);
+          if (sumMatch) rec.sum_rub = clean(sumMatch[1]);
+        }
         // Extract VAT rate
-        const ndsMatch = token.match(/НДС[:\\s]*([\\d]+%?)/i);
+        const ndsMatch = token.match(/НДС[:\s]*(\d+\s*%?)/i);
         if (ndsMatch && !rec.nds) {
-          rec.nds = ndsMatch[1].includes('%') ? ndsMatch[1] : ndsMatch[1] + '%';
+          let ndsVal = clean(ndsMatch[1]);
+          if (!ndsVal.includes('%')) ndsVal = ndsVal + '%';
+          rec.nds = ndsVal;
         }
         continue;
       }
@@ -1475,11 +1545,14 @@ EXTRACT_SCRIPT = r"""
     if (!rec.qty_consumption_unit) rec.qty_consumption_unit = extractQty(rowText);
     if (!rec.price_per_unit) rec.price_per_unit = extractPrice(rowText);
     if (!rec.sum_rub && /НДС/i.test(rowText)) {
-      rec.sum_rub = extractSum(rowText);
+      const sumMatch = rowText.match(/(\d{1,3}(?:\s\d{3})+,\d{2}|\d+,\d{2})/);
+      if (sumMatch) rec.sum_rub = clean(sumMatch[1]);
       // Extract VAT rate from row text
-      const ndsMatch = rowText.match(/НДС[:\\s]*([\\d]+%?)/i);
+      const ndsMatch = rowText.match(/НДС[:\s]*(\d+\s*%?)/i);
       if (ndsMatch && !rec.nds) {
-        rec.nds = ndsMatch[1].includes('%') ? ndsMatch[1] : ndsMatch[1] + '%';
+        let ndsVal = clean(ndsMatch[1]);
+        if (!ndsVal.includes('%')) ndsVal = ndsVal + '%';
+        rec.nds = ndsVal;
       }
     }
 
@@ -1571,6 +1644,26 @@ EXTRACT_SCRIPT = r"""
         continue;
       }
 
+      // Check for MNN in the expanded block sections (not just contractSubjectDrugInfo rows)
+      // This code runs in the context of parseNestedTable, but we need to capture MNN/country from expanded sections
+      const allSections = tr.querySelectorAll('.blockInfo__section');
+      allSections.forEach(sec => {
+        const titleEl = sec.querySelector('.section__title');
+        const infoEl = sec.querySelector('.section__info');
+        if (!titleEl || !infoEl) return;
+        const title = clean(text(titleEl));
+        const info = clean(text(infoEl));
+        if (!info) return;
+
+        const titleUp = title.toUpperCase();
+        if (/МЕЖДУНАРОДНОЕ.*НАИМЕНОВАНИЕ/.test(titleUp)) {
+          // Store in a temporary variable to be merged later
+          window._tempMnn = window._tempMnn || info;
+        } else if (titleUp.includes('СТРАНА ПРОИЗВОДИТЕЛЯ')) {
+          window._tempManufacturerCountry = window._tempManufacturerCountry || info;
+        }
+      });
+
       // Skip rows that don't have the chevron cell (not data rows)
       const firstTd = tr.querySelector('td');
       const hasChevron = cols.length > 0 && (cols[0] === '' || (firstTd && firstTd.className && firstTd.className.includes('chevronRight')));
@@ -1626,7 +1719,7 @@ EXTRACT_SCRIPT = r"""
     const top = topRecords[i];
     const details = detailsByIndex[i] || [];
     if (!details.length) {
-      out.push(top);
+      // Will be handled in the second pass for expanded sections
       continue;
     }
 
@@ -1653,6 +1746,45 @@ EXTRACT_SCRIPT = r"""
       };
       out.push(rec);
     }
+  }
+
+  // Handle case where top row has no nested details but still has MNN/manufacturer_country in expanded sections
+  for (let i = 0; i < topRecords.length; i++) {
+    const top = topRecords[i];
+    const details = detailsByIndex[i] || [];
+    if (details.length > 0) continue; // Already handled above
+
+    // Look for expanded sections directly after the top row
+    const tr = topRows[i];
+    if (!tr) continue;
+
+    // Find next sibling row with ktru-tr-XXXXX id pattern that might contain expanded data
+    let nextRow = tr.nextElementSibling;
+    while (nextRow && nextRow.tagName === 'TR') {
+      const rowId = nextRow.id || '';
+      if (rowId.startsWith('ktru-tr-')) {
+        // This is an expanded detail row - extract MNN and manufacturer country
+        const sections = nextRow.querySelectorAll('.blockInfo__section');
+        for (const sec of sections) {
+          const titleEl = sec.querySelector('.section__title');
+          const infoEl = sec.querySelector('.section__info');
+          if (!titleEl || !infoEl) continue;
+          const title = clean(text(titleEl));
+          const info = clean(text(infoEl));
+          if (!info) continue;
+
+          const titleUp = title.toUpperCase();
+          if (/МЕЖДУНАРОДНОЕ.*НАИМЕНОВАНИЕ/.test(titleUp)) {
+            if (!top.mnn) top.mnn = info;
+          } else if (titleUp.includes('СТРАНА ПРОИЗВОДИТЕЛЯ')) {
+            if (!top.manufacturer_country) top.manufacturer_country = info;
+          }
+        }
+        break;
+      }
+      nextRow = nextRow.nextElementSibling;
+    }
+    out.push(top);
   }
 
   const uniq = [];
