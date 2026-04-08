@@ -1720,18 +1720,31 @@ class EISParserGUI(tk.Tk):
                             self._thread_log("Обнаружена CAPTCHA, пропускаем...", is_error=True)
                             continue
                         
-                        # Extract contract date
-                        contract_date = await EISParser(timeout_ms=config["timeout_ms"]).extract_contract_date(page)
-                        self._thread_log(f"Дата контракта: {contract_date}")
+                        # Go to common-info page first to extract contract info
+                        common_info_url = contract_url
+                        if "common-info.html" not in contract_url:
+                            common_info_url = contract_url.replace("payment-info-and-target-of-order.html", "common-info.html")
                         
-                        # Go to payment info page (where drug details are)
-                        payment_url = contract_url.replace("common-info.html", "payment-info-and-target-of-order.html")
-                        await page.goto(payment_url, wait_until="domcontentloaded", timeout=config["timeout_ms"])
+                        await page.goto(common_info_url, wait_until="domcontentloaded", timeout=config["timeout_ms"])
                         await page.wait_for_timeout(config["page_load_delay"])
                         
-                        # Extract customer, contract number, reestr number
-                        customer, contract_number, reestr_number = await EISParser(timeout_ms=config["timeout_ms"]).parse_contract_info(page, payment_url)
+                        # Extract customer, contract number, reestr number from common-info page
+                        customer, contract_number, reestr_number = await EISParser(timeout_ms=config["timeout_ms"]).parse_contract_info(page, common_info_url)
+                        
+                        # Extract contract date from common-info page
+                        contract_date = await EISParser(timeout_ms=config["timeout_ms"]).extract_contract_date(page)
+                        self._thread_log(f"Дата контракта: {contract_date}")
                         self._thread_log(f"Заказчик: {customer[:50] if customer else 'Не указано'}...")
+                        self._thread_log(f"№ контракта: {contract_number if contract_number else 'Не указано'}")
+                        self._thread_log(f"№ реестра: {reestr_number if reestr_number else 'Не указано'}")
+                        
+                        # Now go to payment info page (where drug details are)
+                        payment_url = contract_url
+                        if "payment-info-and-target-of-order.html" not in contract_url:
+                            payment_url = contract_url.replace("common-info.html", "payment-info-and-target-of-order.html")
+                        
+                        await page.goto(payment_url, wait_until="domcontentloaded", timeout=config["timeout_ms"])
+                        await page.wait_for_timeout(config["page_load_delay"])
                         
                         # Parse drug details from the page
                         parser = EISParser(
