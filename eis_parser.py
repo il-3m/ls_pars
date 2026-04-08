@@ -450,9 +450,13 @@ class EISParser:
             await self.expand_medical_details(page, search_text)
             
             # Небольшая пауза для завершения рендеринга после раскрытия блоков
-            await page.wait_for_timeout(2000)
+            await page.wait_for_timeout(3000)
             
-            # Находим все таблицы (не ждем, они уже должны быть)
+            # Сохраняем HTML для отладки
+            page_content = await page.content()
+            logging.info(f"  Длина страницы: {len(page_content)} символов")
+            
+            # Находим все таблицы
             tables = page.locator("table")
             table_count = await tables.count()
             logging.info(f"  Найдено таблиц: {table_count}")
@@ -469,10 +473,16 @@ class EISParser:
                         continue
                     
                     table_text = await table.text_content()
-                    if not table_text or search_text_lower not in table_text.lower():
+                    if not table_text:
                         continue
                     
-                    logging.info(f"  Таблица {table_idx + 1} содержит '{search_text}'")
+                    # Проверяем, таблица ли это с объектами закупки (ищем по заголовкам)
+                    is_objects_table = "Наименование объекта закупки" in table_text or "Объекты закупки" in table_text or search_text_lower in table_text.lower()
+                    
+                    if not is_objects_table:
+                        continue
+                    
+                    logging.info(f"  Таблица {table_idx + 1} - объекты закупки")
                     
                     # Проверяем, таблица ли это с деталями лекарств
                     is_drug_table = any(h in table_text.upper() for h in ["ТОРГОВОЕ НАИМЕНОВАНИЕ", "НОМЕР РУ", "ЛЕКАРСТВЕННАЯ ФОРМА", "ДОЗИРОВКА"])
@@ -499,6 +509,8 @@ class EISParser:
                                 form_idx = h_idx
                             elif "дозировка" in header_text or "доза" in header_text:
                                 dose_idx = h_idx
+                        
+                        logging.info(f"    Индексы колонок: ТН={tn_idx}, РУ={ru_idx}, Форма={form_idx}, Доза={dose_idx}")
                         
                         # Парсим строки данных
                         for r_idx in range(1, row_count):
@@ -550,7 +562,7 @@ class EISParser:
                             )
                             results.append(rec)
                             
-                            logging.info(f"    ТН={trade_name}, РУ={reg_number}, Форма={medical_form}, Доза={dosage}")
+                            logging.info(f"    Найдено: ТН={trade_name[:50] if trade_name else '---'}, РУ={reg_number}, Форма={medical_form}")
                         continue
                     
                     # Обычная таблица с объектами закупки
@@ -583,6 +595,8 @@ class EISParser:
                     if header_indices["наименование"] is None:
                         continue
                     
+                    logging.info(f"    Индексы колонок обычной таблицы: {header_indices}")
+                    
                     for r_idx in range(1, row_count):
                         row = rows.nth(r_idx)
                         cells = row.locator("td")
@@ -609,6 +623,8 @@ class EISParser:
                         quantity_unit = get_cell_text(header_indices["количество"])
                         unit_price = get_cell_text(header_indices["цена"])
                         total_price_vat = get_cell_text(header_indices["сумма"])
+                        
+                        logging.info(f"    Найдено в обычной таблице: {product_name[:50]}...")
                         
                         # Очищаем название от префиксов
                         if product_name.startswith(("1.", "2.", "3.", "4.", "5.", "6.", "7.", "8.", "9.")):
@@ -1623,6 +1639,11 @@ class EISParserGUI(tk.Tk):
         ttk.Label(bottom, text="Лог выполнения").pack(anchor="w")
         self.log_text = tk.Text(bottom, height=9, wrap="word")
         self.log_text.pack(fill=tk.BOTH, expand=True)
+        
+        # Добавляем кнопку копирования логов
+        log_btn_frame = ttk.Frame(bottom)
+        log_btn_frame.pack(fill=tk.X, pady=(4, 0))
+        ttk.Button(log_btn_frame, text="Копировать лог", command=self._copy_log).pack(side=tk.LEFT)
 
     def _row_input(self, parent, label, variable, on_change=None, add_paste_button: bool = False) -> None:
         row = ttk.Frame(parent)
@@ -1682,6 +1703,19 @@ class EISParserGUI(tk.Tk):
         prefix = "[ERR] " if is_error else ""
         self.log_text.insert("end", f"{prefix}{text}\n")
         self.log_text.see("end")
+
+    def _copy_log(self) -> None:
+        """Копировать весь текст логов в буфер обмена."""
+        try:
+            log_content = self.log_text.get("1.0", tk.END).strip()
+            if log_content:
+                self.clipboard_clear()
+                self.clipboard_append(log_content)
+                self._set_status("Лог скопирован в буфер обмена")
+            else:
+                messagebox.showinfo("Информация", "Лог пуст")
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось скопировать лог: {e}")
 
     def _thread_log(self, text: str, is_error: bool = False) -> None:
         self.after(0, lambda: self._append_log(text, is_error=is_error))
