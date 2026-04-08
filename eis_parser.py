@@ -398,6 +398,11 @@ class EISParser:
         return rec
 
     def _merge_split_records(self, records: list[ParseRecord]) -> list[ParseRecord]:
+        """Merge split records (e.g., main row + detail rows) but DO NOT merge duplicates.
+        
+        Each top-level table row is a separate position, even if names are identical.
+        Only merge when a row is clearly an addon (metadata-only) for the previous core row.
+        """
         if not records:
             return records
 
@@ -405,18 +410,13 @@ class EISParser:
         last_core: Optional[ParseRecord] = None
 
         for rec in records:
+            # If this is an addon row (metadata only), merge into the last core row
             if last_core and self._is_addon_row(rec):
                 self._merge_into(last_core, rec)
                 continue
 
-            key = self._record_key(rec)
-            if key:
-                existing = next((r for r in merged if self._record_key(r) == key), None)
-                if existing:
-                    self._merge_into(existing, rec)
-                    last_core = existing
-                    continue
-
+            # Skip deduplication by key - each row from the HTML is a distinct position
+            # This fixes the issue where identical drug names with different qty/price were merged
             merged.append(rec)
             if self._is_core_row(rec):
                 last_core = rec
@@ -1804,38 +1804,9 @@ EXTRACT_SCRIPT = r"""
     out.push(top);
   }
 
-  const uniq = [];
-  const seen = new Set();
-  for (const rec of out) {
-    const key = [
-      rec.name,
-      rec.category_ls,
-      rec.okpd2,
-      rec.country,
-      rec.mnn,
-      rec.trade_name,
-      rec.ru,
-      rec.release_form,
-      rec.dose,
-      rec.qty_consumption_unit,
-      rec.price_per_unit,
-      rec.sum_rub,
-      rec.nds,
-      rec.holder_name,
-      rec.manufacturer_name,
-      rec.manufacturer_country,
-      rec.primary_package_type,
-      rec.qty_forms_primary,
-      rec.qty_primary_packages,
-      rec.qty_consumer_units,
-      rec.consumer_package_completeness,
-    ].join('|');
-    if (seen.has(key)) continue;
-    seen.add(key);
-    uniq.push(rec);
-  }
-
-  return uniq;
+  // Each top row is a separate position - do not deduplicate by name alone.
+  // Positions with same name but different qty/price are distinct entries.
+  return out;
 }
 """
 
