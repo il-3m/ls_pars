@@ -54,11 +54,6 @@ FIELD_ORDER = [
     "qty_primary_packages",
     "qty_consumer_units",
     "consumer_package_completeness",
-    "customer",
-    "contract_number",
-    "reestr_number",
-    "contract_date",
-    "source_url",
 ]
 
 EXPORT_HEADERS_RU = {
@@ -83,11 +78,6 @@ EXPORT_HEADERS_RU = {
     "qty_primary_packages": "Количество первичных упаковок в потребительской упаковке",
     "qty_consumer_units": "Количество потребительских единиц в потребительской упаковке",
     "consumer_package_completeness": "Комплектность потребительской упаковки",
-    "customer": "Заказчик",
-    "contract_number": "№ контракта",
-    "reestr_number": "№ реестра",
-    "contract_date": "Дата контракта",
-    "source_url": "Ссылка",
 }
 
 
