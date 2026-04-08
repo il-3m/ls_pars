@@ -449,10 +449,10 @@ class EISParser:
             # Раскрываем ВСЕ блоки с деталями
             await self.expand_medical_details(page, search_text)
             
-            # Ждем загрузки таблиц
-            await page.wait_for_selector("table", timeout=10000)
+            # Небольшая пауза для завершения рендеринга после раскрытия блоков
+            await page.wait_for_timeout(2000)
             
-            # Находим все таблицы
+            # Находим все таблицы (не ждем, они уже должны быть)
             tables = page.locator("table")
             table_count = await tables.count()
             logging.info(f"  Найдено таблиц: {table_count}")
