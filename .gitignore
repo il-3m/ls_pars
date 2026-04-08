@@ -1,1 +1,14 @@
-Nothing needs to be added to .gitignore since the changes only include Python source files (.py) which are not build artifacts, dependencies, or temporary files.
+```
+# Compiled Python files
+*.pyc
+__pycache__/
+
+# Log files
+*.log
+parser_log.txt
+
+# Environment files
+.env
+.env.local
+*.env.*
+```

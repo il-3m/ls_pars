@@ -21,6 +21,8 @@ import json
 import re
 import sys
 import threading
+import time
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -30,6 +32,27 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 from playwright.async_api import Browser, BrowserContext, Error, Frame, Page, async_playwright
+
+# Настройка логирования
+logging.basicConfig(
+    filename='parser_log.txt',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    encoding='utf-8'
+)
+
+MEDICAL_FORMS = [
+    "РАСТВОР ДЛЯ ИНФУЗИЙ", "РАСТВОР ДЛЯ ВНУТРИВЕННОГО ВВЕДЕНИЯ",
+    "ТАБЛЕТКИ", "ТАБЛЕТКИ, ПОКРЫТЫЕ ОБОЛОЧКОЙ", "КАПСУЛЫ", "СИРОП",
+    "СУСПЕНЗИЯ ДЛЯ ПРИЕМА ВНУТРЬ", "МАЗЬ ДЛЯ НАРУЖНОГО ПРИМЕНЕНИЯ",
+    "КРЕМ ДЛЯ НАРУЖНОГО ПРИМЕНЕНИЯ", "РАСТВОР ДЛЯ НАРУЖНОГО ПРИМЕНЕНИЯ",
+    "КАПЛИ ГЛАЗНЫЕ", "КАПЛИ НАЗАЛЬНЫЕ", "СПРЕЙ НАЗАЛЬНЫЙ",
+    "ЛИОФИЛИЗАТ ДЛЯ ПРИГОТОВЛЕНИЯ РАСТВОРА ДЛЯ ИНФУЗИЙ",
+    "ПОРОШОК ДЛЯ ПРИГОТОВЛЕНИЯ РАСТВОРА ДЛЯ ИНФУЗИЙ",
+    "РАСТВОР ДЛЯ ИНЪЕКЦИЙ", "ГЕЛЬ ДЛЯ НАРУЖНОГО ПРИМЕНЕНИЯ",
+    "СУППОЗИТОРИИ РЕКТАЛЬНЫЕ", "КАПЛИ УШНЫЕ", "ТАБЛЕТКИ РАСТВОРИМЫЕ",
+    "ТАБЛЕТКИ ДЛЯ РАССАСЫВАНИЯ", "ПОРОШОК ДЛЯ ПРИГОТОВЛЕНИЯ РАСТВОРА ДЛЯ ПРИЕМА ВНУТРЬ"
+]
 
 
 FIELD_ORDER = [
@@ -114,6 +137,11 @@ class ParseRecord:
     qty_primary_packages: str = ""
     qty_consumer_units: str = ""
     consumer_package_completeness: str = ""
+    customer: str = ""
+    contract_number: str = ""
+    reestr_number: str = ""
+    contract_date: str = ""
+    source_url: str = ""
 
     def as_row(self) -> dict[str, str]:
         return {k: getattr(self, k, "") for k in FIELD_ORDER}
@@ -125,6 +153,382 @@ class EISParser:
         self.expand_rounds = expand_rounds
         self.page_load_delay = page_load_delay
         self.expand_delay = expand_delay
+
+    async def parse_contract_info(self, page: Page, url: str) -> tuple[str, str, str]:
+        """Извлечение информации о заказчике, номере контракта и номере реестра из страницы контракта."""
+        customer = ""
+        contract_number = ""
+        reestr_number = ""
+        
+        try:
+            # Извлекаем номер реестра из URL
+            reestr_match = re.search(r'reestrNumber=([0-9]+)', url)
+            if reestr_match:
+                reestr_number = reestr_match.group(1)
+            
+            # Ждем загрузки страницы
+            await page.wait_for_timeout(2000)
+            
+            # Ищем секции с информацией
+            sections = page.locator(".cardMainInfo__section")
+            count = await sections.count()
+            
+            for i in range(count):
+                try:
+                    section = sections.nth(i)
+                    section_text = await section.text_content()
+                    if not section_text:
+                        continue
+                    
+                    # Ищем заказчика
+                    if "Заказчик" in section_text and not customer:
+                        lines = section_text.split('\n')
+                        for j, line in enumerate(lines):
+                            if "Заказчик" in line and j + 1 < len(lines):
+                                potential_customer = lines[j + 1].strip()
+                                if not potential_customer.startswith(("Заказчик:", "Контракт:")):
+                                    customer = potential_customer
+                                    break
+                    
+                    # Ищем номер контракта
+                    if "Контракт" in section_text and not contract_number:
+                        contract_match = re.search(r'Контракт[^\d№]*[№\s]*([^,\n]+)', section_text)
+                        if contract_match:
+                            contract_number = contract_match.group(1).strip()
+                            if contract_number.startswith("№"):
+                                contract_number = contract_number[1:].strip()
+                except Exception:
+                    continue
+                    
+        except Exception as e:
+            logging.error(f"Ошибка при извлечении информации о контракте: {e}")
+        
+        return customer, contract_number, reestr_number
+
+    async def extract_contract_date(self, page: Page) -> str:
+        """Извлечение даты заключения контракта."""
+        try:
+            # Ищем элемент с датой контракта
+            date_elements = page.locator("xpath=//span[@class='section__title' and contains(text(), 'Дата заключения контракта')]/following-sibling::span[@class='section__info']")
+            count = await date_elements.count()
+            if count > 0:
+                date_text = await date_elements.first.text_content()
+                if date_text:
+                    date_match = re.search(r'\b\d{2}\.\d{2}\.\d{4}\b', date_text.strip())
+                    if date_match:
+                        return date_match.group(0)
+        except Exception as e:
+            logging.error(f"Ошибка при извлечении даты контракта: {e}")
+        return "Не указано"
+
+    async def expand_medical_details(self, page: Page, search_text: str) -> None:
+        """Принудительно раскрывает все блоки с деталями лекарств."""
+        try:
+            logging.info(f"  === Раскрытие блоков для '{search_text}' ===")
+            
+            # Раскрываем все toggle-элементы
+            toggle_selectors = [
+                "button[class*='toggle']",
+                "[class*='expand']",
+                "[class*='collapse']",
+                ".purchase-object__header",
+                ".lot-info__toggle",
+                "[aria-expanded='false']",
+            ]
+            
+            expanded_count = 0
+            for selector in toggle_selectors:
+                try:
+                    elements = page.locator(selector)
+                    count = await elements.count()
+                    for i in range(min(count, 50)):
+                        try:
+                            el = elements.nth(i)
+                            aria_expanded = await el.get_attribute("aria-expanded")
+                            if aria_expanded == "true":
+                                continue
+                            await el.scroll_into_view_if_needed(timeout=1000)
+                            await el.click(timeout=1000)
+                            expanded_count += 1
+                        except Exception:
+                            continue
+                except Exception:
+                    continue
+            
+            # Принудительно показываем скрытые элементы через JavaScript
+            try:
+                await page.evaluate("""
+                    var hiddenElements = document.querySelectorAll('[style*="display: none"], [style*="visibility: hidden"]');
+                    hiddenElements.forEach(function(el) {
+                        el.style.display = 'block';
+                        el.style.visibility = 'visible';
+                        el.style.opacity = '1';
+                    });
+                    
+                    var collapsedSections = document.querySelectorAll('.collapse, [class*="collapse"]');
+                    collapsedSections.forEach(function(el) {
+                        el.classList.remove('collapse');
+                        el.classList.add('show');
+                        el.style.display = 'block';
+                    });
+                    
+                    var expandableElements = document.querySelectorAll('[aria-expanded]');
+                    expandableElements.forEach(function(el) {
+                        el.setAttribute('aria-expanded', 'true');
+                    });
+                """)
+                logging.info("    Принудительно показаны скрытые элементы")
+            except Exception as e:
+                logging.debug(f"    Ошибка при показе: {e}")
+            
+            # Ждем появления таблиц
+            try:
+                await page.wait_for_selector("table", timeout=5000)
+            except Exception:
+                pass
+            
+            await page.wait_for_timeout(2000)
+            logging.info(f"  === Обработано блоков: {expanded_count} ===")
+            
+        except Exception as e:
+            logging.error(f"  ⚠ Ошибка раскрытия: {e}")
+
+    async def parse_contract_page(
+        self,
+        page: Page,
+        url: str,
+        search_text: str,
+        contract_date: str,
+        customer: str,
+        contract_number: str,
+        reestr_number: str,
+    ) -> list[ParseRecord]:
+        """Парсинг страницы контракта с извлечением данных о лекарствах."""
+        results: list[ParseRecord] = []
+        
+        try:
+            # Раскрываем ВСЕ блоки с деталями
+            await self.expand_medical_details(page, search_text)
+            
+            # Ждем загрузки таблиц
+            await page.wait_for_selector("table", timeout=10000)
+            
+            # Находим все таблицы
+            tables = page.locator("table")
+            table_count = await tables.count()
+            logging.info(f"  Найдено таблиц: {table_count}")
+            
+            search_text_lower = search_text.lower()
+            
+            for table_idx in range(table_count):
+                try:
+                    table = tables.nth(table_idx)
+                    rows = table.locator("tr")
+                    row_count = await rows.count()
+                    
+                    if row_count < 2:
+                        continue
+                    
+                    table_text = await table.text_content()
+                    if not table_text or search_text_lower not in table_text.lower():
+                        continue
+                    
+                    logging.info(f"  Таблица {table_idx + 1} содержит '{search_text}'")
+                    
+                    # Проверяем, таблица ли это с деталями лекарств
+                    is_drug_table = any(h in table_text.upper() for h in ["ТОРГОВОЕ НАИМЕНОВАНИЕ", "НОМЕР РУ", "ЛЕКАРСТВЕННАЯ ФОРМА", "ДОЗИРОВКА"])
+                    
+                    if is_drug_table:
+                        logging.info(f"    Таблица с деталями лекарств!")
+                        
+                        # Парсим заголовки
+                        header_row = rows.first
+                        header_cells = header_row.locator("th, td")
+                        header_count = await header_cells.count()
+                        
+                        tn_idx = ru_idx = form_idx = dose_idx = None
+                        
+                        for h_idx in range(header_count):
+                            header_cell = header_cells.nth(h_idx)
+                            header_text = (await header_cell.text_content() or "").lower()
+                            
+                            if "торговое наименование" in header_text or "тн" in header_text:
+                                tn_idx = h_idx
+                            elif "номер ру" in header_text or "ру" in header_text:
+                                ru_idx = h_idx
+                            elif "лекарственная форма" in header_text or "форма" in header_text:
+                                form_idx = h_idx
+                            elif "дозировка" in header_text or "доза" in header_text:
+                                dose_idx = h_idx
+                        
+                        # Парсим строки данных
+                        for r_idx in range(1, row_count):
+                            row = rows.nth(r_idx)
+                            cells = row.locator("td")
+                            cell_count = await cells.count()
+                            
+                            if cell_count == 0:
+                                continue
+                            
+                            cell_texts = []
+                            for c_idx in range(cell_count):
+                                cell = cells.nth(c_idx)
+                                cell_texts.append((await cell.text_content() or "").strip())
+                            
+                            # Проверяем, содержит ли строка поисковый запрос
+                            if not any(search_text_lower in c.lower() for c in cell_texts):
+                                continue
+                            
+                            trade_name = reg_number = medical_form = dosage = "Не указано"
+                            
+                            if tn_idx is not None and tn_idx < len(cell_texts) and cell_texts[tn_idx]:
+                                trade_name = cell_texts[tn_idx]
+                            if ru_idx is not None and ru_idx < len(cell_texts) and cell_texts[ru_idx]:
+                                reg_number = cell_texts[ru_idx]
+                            if form_idx is not None and form_idx < len(cell_texts):
+                                form_text = cell_texts[form_idx].upper()
+                                for form in sorted(MEDICAL_FORMS, key=len, reverse=True):
+                                    if form in form_text:
+                                        medical_form = form
+                                        break
+                            if dose_idx is not None and dose_idx < len(cell_texts) and cell_texts[dose_idx]:
+                                dosage = cell_texts[dose_idx]
+                            
+                            rec = ParseRecord(
+                                name=search_text,
+                                country="Не указано",
+                                okpd2="Не указано",
+                                mnn=search_text,
+                                trade_name=trade_name,
+                                ru=reg_number,
+                                release_form=medical_form,
+                                dose=dosage,
+                                customer=customer,
+                                contract_number=contract_number,
+                                reestr_number=reestr_number,
+                                contract_date=contract_date,
+                                source_url=url,
+                            )
+                            results.append(rec)
+                            
+                            logging.info(f"    ТН={trade_name}, РУ={reg_number}, Форма={medical_form}, Доза={dosage}")
+                        continue
+                    
+                    # Обычная таблица с объектами закупки
+                    header_indices = {
+                        "наименование": None, "ктру": None, "тип": None,
+                        "количество": None, "цена": None, "сумма": None
+                    }
+                    
+                    header_row = rows.first
+                    header_cells = header_row.locator("th, td")
+                    header_count = await header_cells.count()
+                    
+                    for h_idx in range(header_count):
+                        header_cell = header_cells.nth(h_idx)
+                        header_text = (await header_cell.text_content() or "").lower()
+                        
+                        if "наименование" in header_text or "объект закупки" in header_text:
+                            header_indices["наименование"] = h_idx
+                        elif "ктру" in header_text or "окпд" in header_text:
+                            header_indices["ктру"] = h_idx
+                        elif "тип" in header_text:
+                            header_indices["тип"] = h_idx
+                        elif "количество" in header_text or "объем" in header_text:
+                            header_indices["количество"] = h_idx
+                        elif "цена" in header_text:
+                            header_indices["цена"] = h_idx
+                        elif "сумма" in header_text:
+                            header_indices["сумма"] = h_idx
+                    
+                    if header_indices["наименование"] is None:
+                        continue
+                    
+                    for r_idx in range(1, row_count):
+                        row = rows.nth(r_idx)
+                        cells = row.locator("td")
+                        cell_count = await cells.count()
+                        
+                        if cell_count == 0:
+                            continue
+                        
+                        cell_texts = []
+                        for c_idx in range(cell_count):
+                            cell = cells.nth(c_idx)
+                            cell_texts.append((await cell.text_content() or "").strip())
+                        
+                        found = any(search_text_lower in c.lower() for c in cell_texts)
+                        if not found:
+                            continue
+                        
+                        def get_cell_text(index):
+                            return cell_texts[index] if index is not None and index < len(cell_texts) else "Не указано"
+                        
+                        product_name = get_cell_text(header_indices["наименование"])
+                        ktu_okpd = get_cell_text(header_indices["ктру"])
+                        type_object = get_cell_text(header_indices["тип"]) or "Товар"
+                        quantity_unit = get_cell_text(header_indices["количество"])
+                        unit_price = get_cell_text(header_indices["цена"])
+                        total_price_vat = get_cell_text(header_indices["сумма"])
+                        
+                        # Очищаем название от префиксов
+                        if product_name.startswith(("1.", "2.", "3.", "4.", "5.", "6.", "7.", "8.", "9.")):
+                            product_name = product_name[product_name.find(".") + 1:].strip()
+                        
+                        # Извлекаем страну
+                        country_text = "Не указано"
+                        country_match = re.search(r'Страна происхождения:\s*([^,\n]+)', product_name)
+                        if country_match:
+                            country_text = country_match.group(1).strip()
+                            product_name = re.sub(r'Страна происхождения:\s*[^,\n]+', '', product_name).strip()
+                        
+                        product_name = re.sub(r'единица измерения товара: Штука \(шт\)', '', product_name).strip()
+                        
+                        # Извлекаем форму и дозировку из названия
+                        medical_form = "Не указано"
+                        dosage = "Не указано"
+                        
+                        sorted_forms = sorted(MEDICAL_FORMS, key=len, reverse=True)
+                        for form in sorted_forms:
+                            if form in product_name.upper():
+                                medical_form = form
+                                break
+                        
+                        dosage_pattern = r'(\d+(?:[.,]\d+)?\s*(?:мг|мл|ед|мкг|г))'
+                        dosage_matches = re.findall(dosage_pattern, product_name, re.IGNORECASE)
+                        if dosage_matches:
+                            dosage = ', '.join(dosage_matches)
+                        
+                        rec = ParseRecord(
+                            name=product_name,
+                            country=country_text,
+                            okpd2=ktu_okpd,
+                            mnn=search_text,
+                            trade_name="Не указано",
+                            ru="Не указано",
+                            release_form=medical_form,
+                            dose=dosage,
+                            qty_consumption_unit=quantity_unit,
+                            price_per_unit=unit_price,
+                            sum_rub=total_price_vat,
+                            customer=customer,
+                            contract_number=contract_number,
+                            reestr_number=reestr_number,
+                            contract_date=contract_date,
+                            source_url=url,
+                        )
+                        results.append(rec)
+                        
+                except Exception as e:
+                    logging.debug(f"  Ошибка таблицы {table_idx + 1}: {e}")
+                    continue
+            
+            logging.info(f"  === Извлечено записей: {len(results)} ===")
+            
+        except Exception as e:
+            logging.error(f"Ошибка парсинга: {str(e)}", exc_info=True)
+        
+        return results
 
     async def parse_url(
         self,
@@ -951,22 +1355,24 @@ def build_arg_parser() -> argparse.ArgumentParser:
 class EISParserGUI(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("EIS Parser - Единый интерфейс")
-        self.geometry("1380x800")
-        self.minsize(1120, 640)
+        self.title("Парсер лекарственных средств с ЕИС")
+        self.geometry("1400x900")
+        self.minsize(1200, 700)
 
-        self.url_var = tk.StringVar(
-            value=(
-                "https://zakupki.gov.ru/epz/contract/contractCard/payment-info-and-target-of-order.html"
-                "?reestrNumber=2312813818126000251&contractInfoId=108730614"
-            )
-        )
-        self.search_var = tk.StringVar(value="")
+        # Параметры поиска лекарств
+        self.search_query_var = tk.StringVar(value="")
+        self.date_from_var = tk.StringVar(value="")
+        self.date_to_var = tk.StringVar(value="")
+        self.max_contracts_var = tk.StringVar(value="20")
+        self.moscow_only_var = tk.BooleanVar(value=False)
+        self.rosunimed_only_var = tk.BooleanVar(value=False)
+        
+        # Технические параметры
         self.archive_var = tk.StringVar(value="archive")
         self.csv_var = tk.StringVar(value="export/result.csv")
         self.xlsx_var = tk.StringVar(value="export/result.xlsx")
-        self.trace_var = tk.BooleanVar(value=True)
-        self.headed_var = tk.BooleanVar(value=False)
+        self.trace_var = tk.BooleanVar(value=False)
+        self.headed_var = tk.BooleanVar(value=True)
         self.timeout_ms_var = tk.IntVar(value=90000)
         self.expand_rounds_var = tk.IntVar(value=5)
         self.page_load_delay_var = tk.IntVar(value=1200)
@@ -984,16 +1390,42 @@ class EISParserGUI(tk.Tk):
 
         title = ttk.Label(
             root,
-            text="Запуск парсинга ЕИС в одном окне",
-            font=("Segoe UI", 13, "bold"),
+            text="Парсер конкретных лекарственных средств",
+            font=("Segoe UI", 14, "bold"),
         )
         title.pack(anchor="w", pady=(0, 8))
 
-        controls = ttk.LabelFrame(root, text="Параметры", padding=8)
-        controls.pack(fill=tk.X)
+        # Параметры поиска
+        search_frame = ttk.LabelFrame(root, text="Параметры поиска лекарств", padding=8)
+        search_frame.pack(fill=tk.X)
 
-        self._row_input(controls, "Ссылка ЕИС", self.url_var, add_paste_button=True)
-        self._row_input(controls, "Слово для фильтра (опц.)", self.search_var, on_change=self._apply_filter)
+        self._row_input(search_frame, "Поисковый запрос (МНН):", self.search_query_var, add_paste_button=False)
+        
+        date_frame = ttk.Frame(search_frame)
+        date_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(date_frame, text="Дата с (дд.мм.гггг):", width=22).pack(side=tk.LEFT)
+        self.date_from_entry = ttk.Entry(date_frame, textvariable=self.date_from_var, width=15)
+        self.date_from_entry.pack(side=tk.LEFT)
+        self.date_from_entry.insert(0, (datetime.now().replace(month=datetime.now().month - 3 if datetime.now().month > 3 else 12)).strftime("%d.%m.%Y"))
+        ttk.Label(date_frame, text="  Дата по (дд.мм.гггг):", width=18).pack(side=tk.LEFT, padx=(10, 0))
+        self.date_to_entry = ttk.Entry(date_frame, textvariable=self.date_to_var, width=15)
+        self.date_to_entry.pack(side=tk.LEFT)
+        self.date_to_entry.insert(0, datetime.now().strftime("%d.%m.%Y"))
+        
+        self._row_input(search_frame, "Макс. контрактов:", self.max_contracts_var)
+
+        # Фильтры
+        filter_frame = ttk.Frame(search_frame)
+        filter_frame.pack(fill=tk.X, pady=(6, 0))
+        self.region_checkbox = ttk.Checkbutton(filter_frame, text="Искать только в Москве и МО", variable=self.moscow_only_var, command=self._on_region_toggle)
+        self.region_checkbox.pack(side=tk.LEFT)
+        self.rosunimed_checkbox = ttk.Checkbutton(filter_frame, text="Искать только в Росунимеде", variable=self.rosunimed_only_var, command=self._on_rosunimed_toggle)
+        self.rosunimed_checkbox.pack(side=tk.LEFT, padx=(14, 0))
+
+        # Технические параметры
+        controls = ttk.LabelFrame(root, text="Технические параметры", padding=8)
+        controls.pack(fill=tk.X, pady=(8, 0))
+
         self._row_input(controls, "Папка архива", self.archive_var)
         self._row_input(controls, "CSV файл", self.csv_var)
         self._row_input(controls, "XLSX файл", self.xlsx_var)
@@ -1018,7 +1450,7 @@ class EISParserGUI(tk.Tk):
 
         actions = ttk.Frame(root)
         actions.pack(fill=tk.X, pady=(8, 8))
-        self.run_btn = ttk.Button(actions, text="Запустить парсинг", command=self._start_parse)
+        self.run_btn = ttk.Button(actions, text="Найти закупки", command=self._start_parse)
         self.run_btn.pack(side=tk.LEFT)
         ttk.Button(actions, text="Открыть CSV", command=self._open_csv_file).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Button(actions, text="Выгрузить Excel", command=self._export_excel_file).pack(side=tk.LEFT, padx=(8, 0))
@@ -1115,65 +1547,254 @@ class EISParserGUI(tk.Tk):
     def _thread_log(self, text: str, is_error: bool = False) -> None:
         self.after(0, lambda: self._append_log(text, is_error=is_error))
 
+    def _on_region_toggle(self) -> None:
+        if self.moscow_only_var.get() and self.rosunimed_only_var.get():
+            self.rosunimed_only_var.set(False)
+
+    def _on_rosunimed_toggle(self) -> None:
+        if self.rosunimed_only_var.get() and self.moscow_only_var.get():
+            self.moscow_only_var.set(False)
+
     def _start_parse(self) -> None:
         if self._worker_thread and self._worker_thread.is_alive():
             messagebox.showinfo("Информация", "Парсинг уже выполняется")
             return
 
-        url = self.url_var.get().strip()
-        if not url:
-            messagebox.showwarning("Внимание", "Укажите ссылку ЕИС")
+        search_query = self.search_query_var.get().strip()
+        if not search_query:
+            messagebox.showwarning("Внимание", "Введите поисковый запрос (МНН)")
+            return
+
+        date_from = self.date_from_var.get().strip()
+        date_to = self.date_to_var.get().strip()
+        
+        try:
+            max_contracts = int(self.max_contracts_var.get().strip() or "20")
+            if max_contracts <= 0:
+                raise ValueError()
+        except ValueError:
+            messagebox.showwarning("Внимание", "Макс. контрактов должно быть положительным числом")
             return
 
         self.run_btn.config(state=tk.DISABLED)
-        self._set_status("Запуск парсинга...")
-        self._append_log("Запуск...")
+        self._set_status("Поиск и парсинг...")
+        self._append_log(f"Запуск поиска: {search_query}")
 
         config = {
-            "url": url,
+            "search_query": search_query,
+            "date_from": date_from,
+            "date_to": date_to,
+            "max_contracts": max_contracts,
+            "moscow_only": self.moscow_only_var.get(),
+            "rosunimed_only": self.rosunimed_only_var.get(),
             "archive_dir": self.archive_var.get().strip() or "archive",
             "out_csv": self.csv_var.get().strip() or "export/result.csv",
             "out_xlsx": self.xlsx_var.get().strip() or "",
             "headed": self.headed_var.get(),
             "trace": self.trace_var.get(),
+            "timeout_ms": self.timeout_ms_var.get(),
+            "expand_rounds": self.expand_rounds_var.get(),
+            "page_load_delay": self.page_load_delay_var.get(),
+            "expand_delay": self.expand_delay_var.get(),
         }
 
-        self._worker_thread = threading.Thread(target=self._worker, args=(config,), daemon=True)
+        self._worker_thread = threading.Thread(target=self._worker_search, args=(config,), daemon=True)
         self._worker_thread.start()
 
-    def _worker(self, config: dict) -> None:
-        ns = argparse.Namespace(
-            gui=False,
-            url=config["url"],
-            url_file=None,
-            archive_dir=config["archive_dir"],
-            out_csv=config["out_csv"],
-            out_xlsx=config["out_xlsx"],
-            headed=config["headed"],
-            trace=config["trace"],
-            timeout_ms=self.timeout_ms_var.get(),
-            expand_rounds=self.expand_rounds_var.get(),
-            page_load_delay=self.page_load_delay_var.get(),
-            expand_delay=self.expand_delay_var.get(),
-        )
+    async def _do_search_async(self, config: dict) -> tuple[int, Optional[Path], int]:
+        """Async function to perform the search and parsing."""
+        import asyncio
+        from playwright.async_api import async_playwright
+        
+        search_query = config["search_query"]
+        date_from = config["date_from"]
+        date_to = config["date_to"]
+        max_contracts = config["max_contracts"]
+        moscow_only = config["moscow_only"]
+        rosunimed_only = config["rosunimed_only"]
+        
+        base_url = "https://zakupki.gov.ru/epz/contract/search/results.html"
+        
+        # Build search URL
+        params = {
+            "searchString": search_query,
+            "morphology": "on",
+            "search-filter": "Дате+размещения",
+            "fz44": "on",
+            "contractStageList_1": "on",
+            "contractStageData": "1",
+            "budgetLevelsIdNameHidden": "{}",
+            "contractDateFrom": date_from,
+            "contractDateTo": date_to,
+            "sortBy": "UPDATE_DATE",
+            "pageNumber": "1",
+            "sortDirection": "false",
+            "recordsPerPage": "_10",
+            "showLotsInfoHidden": "false",
+            "strictEqual": "true"
+        }
+
+        if rosunimed_only:
+            params["customerIdOrg"] = '14269:ФЕДЕРАЛЬНОЕ ГОСУДАРСТВЕННОЕ БЮДЖЕТНОЕ ОБРАЗОВАТЕЛЬНОЕ УЧРЕЖДЕНИЕ ВЫСШЕГО ОБРАЗОВАНИЯ "РОССИЙСКИЙ УНИВЕРСИТЕТ МЕДИЦИНЫ" МИНИСТЕРСТВА ЗДРАВООХРАНЕНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИzZ03731000459zZ666998zZ63203zZ7707082145zZ'
+        elif moscow_only:
+            params["customerPlace"] = "77000000000,50000000000"
+            params["customerPlaceCodes"] = "77000000000,50000000000"
+
+        url = base_url + "?" + "&".join([f"{k}={v}" for k, v in params.items()])
+        self._thread_log(f"Запрос: {url}")
+        
+        all_records: list[ParseRecord] = []
+        contracts_count = 0
+        
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=not config["headed"])
+            context = await browser.new_context(locale="ru-RU")
+            page = await context.new_page()
+            
+            # Load search results page
+            await page.goto(url, wait_until="domcontentloaded", timeout=config["timeout_ms"])
+            await page.wait_for_timeout(2000)
+            
+            # Get total pages
+            total_pages = 1
+            try:
+                pagination = page.locator(".paginator a")
+                count = await pagination.count()
+                page_numbers = []
+                for i in range(count):
+                    try:
+                        text = await pagination.nth(i).text_content()
+                        if text and text.isdigit():
+                            page_numbers.append(int(text))
+                    except Exception:
+                        continue
+                total_pages = max(page_numbers) if page_numbers else 1
+            except Exception:
+                pass
+            
+            self._thread_log(f"Всего страниц: {total_pages}")
+            
+            # Iterate through pages
+            for page_num in range(1, total_pages + 1):
+                if contracts_count >= max_contracts:
+                    break
+                
+                params["pageNumber"] = str(page_num)
+                page_url = base_url + "?" + "&".join([f"{k}={v}" for k, v in params.items()])
+                await page.goto(page_url, wait_until="domcontentloaded", timeout=config["timeout_ms"])
+                await page.wait_for_timeout(2000)
+                
+                self._thread_log(f"Страница {page_num}/{total_pages}")
+                
+                # Find contract links
+                links = page.locator("a[href]")
+                link_count = await links.count()
+                
+                contract_urls = set()
+                for i in range(link_count):
+                    try:
+                        href = await links.nth(i).get_attribute("href")
+                        if href and "contract/contractCard/common-info.html" in href:
+                            contract_urls.add(href)
+                    except Exception:
+                        continue
+                
+                # Parse each contract
+                for contract_url in contract_urls:
+                    if contracts_count >= max_contracts:
+                        break
+                    
+                    try:
+                        self._thread_log(f"Обработка контракта: {contract_url[:80]}...")
+                        
+                        # Go to contract common info page
+                        await page.goto(contract_url, wait_until="domcontentloaded", timeout=config["timeout_ms"])
+                        await page.wait_for_timeout(2000)
+                        
+                        # Check for CAPTCHA
+                        page_content = await page.content()
+                        if "captcha" in page_content.lower():
+                            self._thread_log("Обнаружена CAPTCHA, пропускаем...", is_error=True)
+                            continue
+                        
+                        # Extract contract date
+                        contract_date = await EISParser(timeout_ms=config["timeout_ms"]).extract_contract_date(page)
+                        self._thread_log(f"Дата контракта: {contract_date}")
+                        
+                        # Go to payment info page (where drug details are)
+                        payment_url = contract_url.replace("common-info.html", "payment-info-and-target-of-order.html")
+                        await page.goto(payment_url, wait_until="domcontentloaded", timeout=config["timeout_ms"])
+                        await page.wait_for_timeout(config["page_load_delay"])
+                        
+                        # Extract customer, contract number, reestr number
+                        customer, contract_number, reestr_number = await EISParser(timeout_ms=config["timeout_ms"]).parse_contract_info(page, payment_url)
+                        self._thread_log(f"Заказчик: {customer[:50] if customer else 'Не указано'}...")
+                        
+                        # Parse drug details from the page
+                        parser = EISParser(
+                            timeout_ms=config["timeout_ms"],
+                            expand_rounds=config["expand_rounds"],
+                            page_load_delay=config["page_load_delay"],
+                            expand_delay=config["expand_delay"],
+                        )
+                        records = await parser.parse_contract_page(
+                            page=page,
+                            url=payment_url,
+                            search_text=search_query,
+                            contract_date=contract_date,
+                            customer=customer,
+                            contract_number=contract_number,
+                            reestr_number=reestr_number,
+                        )
+                        
+                        if records:
+                            all_records.extend(records)
+                            contracts_count += 1
+                            self._thread_log(f"Найдено записей: {len(records)}")
+                        
+                    except Exception as e:
+                        self._thread_log(f"Ошибка обработки контракта: {e}", is_error=True)
+                        continue
+            
+            await browser.close()
+        
+        # Save results
+        if all_records:
+            rows = [r.as_row() for r in all_records]
+            csv_path = Path(config["out_csv"])
+            csv_path.parent.mkdir(parents=True, exist_ok=True)
+            export_csv(rows, csv_path)
+            self._thread_log(f"CSV сохранен: {csv_path}")
+            
+            if config["out_xlsx"]:
+                ok = export_xlsx(rows, Path(config["out_xlsx"]))
+                if ok:
+                    self._thread_log(f"XLSX сохранен: {config['out_xlsx']}")
+            
+            return (0, csv_path, len(all_records))
+        else:
+            self._thread_log("Нет данных для экспорта", is_error=True)
+            return (2, None, 0)
+
+    def _worker_search(self, config: dict) -> None:
+        """Worker thread for searching and parsing contracts."""
         try:
-            rc = asyncio.run(run(ns, log_fn=self._thread_log))
+            result = asyncio.run(self._do_search_async(config))
+            rc, csv_path, record_count = result
+            self.after(0, lambda: self._on_worker_done_search(rc, csv_path, record_count))
         except Exception as exc:
             self.after(0, lambda: self._append_log(f"Критическая ошибка: {exc}", is_error=True))
-            rc = 1
+            self.after(0, lambda: self._on_worker_done_search(1, None, 0))
 
-        self.after(0, lambda: self._on_worker_done(rc, Path(ns.out_csv)))
-
-    def _on_worker_done(self, rc: int, csv_path: Path) -> None:
+    def _on_worker_done_search(self, rc: int, csv_path: Optional[Path], record_count: int) -> None:
         self.run_btn.config(state=tk.NORMAL)
-        if rc == 0 and csv_path.exists():
+        if rc == 0 and csv_path and csv_path.exists():
             self._load_rows_from_csv(csv_path)
-            # Always show parse result first. Search is only optional client-side filtering.
             self.filtered_rows = list(self.all_rows)
             self._render_rows()
-            self._set_status(f"Готово. Строк: {len(self.all_rows)}")
+            self._set_status(f"Готово. Найдено записей: {record_count}")
         else:
-            self._set_status("Завершено с ошибкой")
+            self._set_status("Завершено без результатов")
 
     def _load_rows_from_csv(self, csv_path: Path) -> None:
         rows: list[dict[str, str]] = []
