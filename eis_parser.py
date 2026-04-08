@@ -1859,7 +1859,7 @@ class EISParserGUI(tk.Tk):
                             self._thread_log("Обнаружена CAPTCHA, пропускаем...", is_error=True)
                             continue
                         
-                        # Go to common-info page first to extract contract info
+                        # Extract data from the current page (common-info)
                         common_info_url = contract_url
                         if "common-info.html" not in contract_url:
                             common_info_url = contract_url.replace("payment-info-and-target-of-order.html", "common-info.html")
@@ -1877,15 +1877,7 @@ class EISParserGUI(tk.Tk):
                         self._thread_log(f"№ контракта: {contract_number if contract_number else 'Не указано'}")
                         self._thread_log(f"№ реестра: {reestr_number if reestr_number else 'Не указано'}")
                         
-                        # Now go to payment info page (where drug details are)
-                        payment_url = contract_url
-                        if "payment-info-and-target-of-order.html" not in contract_url:
-                            payment_url = contract_url.replace("common-info.html", "payment-info-and-target-of-order.html")
-                        
-                        await page.goto(payment_url, wait_until="domcontentloaded", timeout=config["timeout_ms"])
-                        await page.wait_for_timeout(config["page_load_delay"])
-                        
-                        # Parse drug details from the page
+                        # Parse drug details from the SAME page (common-info contains the drug tables)
                         parser = EISParser(
                             timeout_ms=config["timeout_ms"],
                             expand_rounds=config["expand_rounds"],
@@ -1894,7 +1886,7 @@ class EISParserGUI(tk.Tk):
                         )
                         records = await parser.parse_contract_page(
                             page=page,
-                            url=payment_url,
+                            url=common_info_url,
                             search_text=search_query,
                             contract_date=contract_date,
                             customer=customer,
@@ -1905,7 +1897,10 @@ class EISParserGUI(tk.Tk):
                         if records:
                             all_records.extend(records)
                             contracts_count += 1
-                            self._thread_log(f"Найдено записей: {len(records)}")
+                            self._thread_log(f"Найдено записей: {len(records)} в контракте #{contracts_count}")
+                        else:
+                            # Даже если записей нет, считаем контракт обработанным
+                            contracts_count += 1
                         
                     except Exception as e:
                         self._thread_log(f"Ошибка обработки контракта: {e}", is_error=True)
