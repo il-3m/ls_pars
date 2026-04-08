@@ -1695,6 +1695,9 @@ class EISParserGUI(tk.Tk):
                     try:
                         href = await links.nth(i).get_attribute("href")
                         if href and "contract/contractCard/common-info.html" in href:
+                            # Convert relative URL to absolute
+                            if href.startswith("/"):
+                                href = "https://zakupki.gov.ru" + href
                             contract_urls.add(href)
                     except Exception:
                         continue
