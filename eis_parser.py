@@ -167,11 +167,16 @@ class EISParser:
                 reestr_number = reestr_match.group(1)
             
             # Ждем загрузки страницы
-            await page.wait_for_timeout(2000)
+            await page.wait_for_timeout(3000)
             
-            # Ищем секции с информацией
-            sections = page.locator(".cardMainInfo__section")
+            # Получаем полный HTML для отладки
+            page_content = await page.content()
+            logging.info(f"  Длина страницы: {len(page_content)} символов")
+            
+            # Метод 1: Ищем по классам ЕИС
+            sections = page.locator(".cardMainInfo__section, .card-section, .registry-card__section")
             count = await sections.count()
+            logging.info(f"  Найдено секций: {count}")
             
             for i in range(count):
                 try:
@@ -180,35 +185,133 @@ class EISParser:
                     if not section_text:
                         continue
                     
+                    logging.debug(f"  Секция {i}: {section_text[:200]}...")
+                    
                     # Ищем заказчика
                     if "Заказчик" in section_text and not customer:
                         lines = section_text.split('\n')
                         for j, line in enumerate(lines):
                             if "Заказчик" in line and j + 1 < len(lines):
                                 potential_customer = lines[j + 1].strip()
-                                if not potential_customer.startswith(("Заказчик:", "Контракт:")):
+                                if potential_customer and not potential_customer.startswith(("Заказчик:", "Контракт:", "№")):
                                     customer = potential_customer
+                                    logging.info(f"  Заказчик найден (метод 1): {customer[:100]}")
                                     break
+                        
+                        # Альтернативный поиск заказчика в той же строке
+                        if not customer:
+                            match = re.search(r'Заказчик[:\s]+([^,\n]+)', section_text)
+                            if match:
+                                customer = match.group(1).strip()
+                                logging.info(f"  Заказчик найден (метод 1 альт): {customer[:100]}")
                     
                     # Ищем номер контракта
-                    if "Контракт" in section_text and not contract_number:
-                        contract_match = re.search(r'Контракт[^\d№]*[№\s]*([^,\n]+)', section_text)
-                        if contract_match:
-                            contract_number = contract_match.group(1).strip()
-                            if contract_number.startswith("№"):
-                                contract_number = contract_number[1:].strip()
-                except Exception:
+                    if "Контракт" in section_text or "№ контракта" in section_text or "Номер контракта" in section_text:
+                        # Разные варианты написания
+                        patterns = [
+                            r'Контракт[^№№]*[№\s]*([0-9А-Яа-яA-Za-z\-/]+)',
+                            r'Номер контракта[:\s]*([0-9А-Яа-яA-Za-z\-/]+)',
+                            r'№ контракта[:\s]*([0-9А-Яа-яA-Za-z\-/]+)'
+                        ]
+                        for pattern in patterns:
+                            match = re.search(pattern, section_text)
+                            if match:
+                                contract_number = match.group(1).strip()
+                                if contract_number.startswith("№"):
+                                    contract_number = contract_number[1:].strip()
+                                logging.info(f"  Номер контракта найден: {contract_number}")
+                                break
+                                
+                except Exception as e:
+                    logging.debug(f"  Ошибка обработки секции {i}: {e}")
                     continue
+            
+            # Метод 2: Поиск по XPath с более общими селекторами
+            if not customer:
+                try:
+                    # Ищем любой элемент с текстом "Заказчик" и берем следующий за ним текст
+                    xpath_query = "//text()[contains(., 'Заказчик')]"
+                    elements = page.locator(f"xpath={xpath_query}")
+                    elem_count = await elements.count()
+                    logging.info(f"  Найдено элементов 'Заказчик' через XPath: {elem_count}")
+                    
+                    for i in range(min(elem_count, 5)):
+                        elem = elements.nth(i)
+                        parent = await elem.evaluate_handle("node => node.parentElement")
+                        if parent:
+                            parent_text = await parent.text_content()
+                            if parent_text:
+                                lines = parent_text.split('\n')
+                                for j, line in enumerate(lines):
+                                    if "Заказчик" in line and j + 1 < len(lines):
+                                        next_line = lines[j + 1].strip()
+                                        if next_line and len(next_line) > 5:
+                                            customer = next_line
+                                            logging.info(f"  Заказчик найден (метод 2): {customer[:100]}")
+                                            break
+                                if customer:
+                                    break
+                except Exception as e:
+                    logging.debug(f"  Ошибка метода 2: {e}")
+            
+            # Метод 3: Поиск organization-name
+            if not customer:
+                try:
+                    org_elements = page.locator(".organization-name, .customer-name, [data-field='customerName']")
+                    org_count = await org_elements.count()
+                    if org_count > 0:
+                        customer = await org_elements.first.inner_text()
+                        customer = customer.strip()
+                        logging.info(f"  Заказчик найден (метод 3): {customer[:100]}")
+                except Exception as e:
+                    logging.debug(f"  Ошибка метода 3: {e}")
+            
+            # Метод 4: Поиск в заголовке страницы
+            if not customer:
+                try:
+                    header = page.locator("h1, .header-title, .card-title")
+                    if await header.count() > 0:
+                        header_text = await header.first.inner_text()
+                        # Иногда название заказчика есть в заголовке
+                        if "Заказчик" in header_text:
+                            match = re.search(r'Заказчик[:\s]+([^,]+)', header_text)
+                            if match:
+                                customer = match.group(1).strip()
+                                logging.info(f"  Заказчик найден (метод 4): {customer[:100]}")
+                except Exception as e:
+                    logging.debug(f"  Ошибка метода 4: {e}")
+            
+            # Если все еще не нашли, пробуем извлечь из первого подходящего элемента
+            if not customer:
+                logging.warning("  Не удалось найти заказчика стандартными методами, пробуем общий поиск...")
+                try:
+                    # Ищем все текстовые узлы и проверяем на наличие слова "Заказчик"
+                    all_text = await page.locator("body").first.inner_text()
+                    lines = all_text.split('\n')
+                    for j, line in enumerate(lines):
+                        if "Заказчик" in line and j + 1 < len(lines):
+                            next_line = lines[j + 1].strip()
+                            if next_line and len(next_line) > 10 and not next_line.startswith(("Заказчик", "Контракт", "№", "Дата")):
+                                customer = next_line
+                                logging.info(f"  Заказчик найден (метод 5): {customer[:100]}")
+                                break
+                except Exception as e:
+                    logging.debug(f"  Ошибка метода 5: {e}")
                     
         except Exception as e:
-            logging.error(f"Ошибка при извлечении информации о контракте: {e}")
+            logging.error(f"Ошибка при извлечении информации о контракте: {e}", exc_info=True)
+        
+        if not customer:
+            logging.warning("  Заказчик НЕ НАЙДЕН")
+        if not contract_number:
+            logging.warning("  Номер контракта НЕ НАЙДЕН")
         
         return customer, contract_number, reestr_number
 
     async def extract_contract_date(self, page: Page) -> str:
         """Извлечение даты заключения контракта."""
         try:
-            # Ищем элемент с датой контракта
+            # Метод 1: Ищем по классу section__title
             date_elements = page.locator("xpath=//span[@class='section__title' and contains(text(), 'Дата заключения контракта')]/following-sibling::span[@class='section__info']")
             count = await date_elements.count()
             if count > 0:
@@ -216,9 +319,45 @@ class EISParser:
                 if date_text:
                     date_match = re.search(r'\b\d{2}\.\d{2}\.\d{4}\b', date_text.strip())
                     if date_match:
+                        logging.info(f"  Дата контракта найдена (метод 1): {date_match.group(0)}")
                         return date_match.group(0)
+            
+            # Метод 2: Поиск по другим возможным селекторам
+            selectors = [
+                "xpath=//span[contains(text(), 'Дата заключения')]/following-sibling::span",
+                "xpath=//dt[contains(text(), 'Дата заключения')]/following-sibling::dd",
+                "[data-field='signDate']",
+                ".contract-date",
+                ".date-signed"
+            ]
+            
+            for selector in selectors:
+                try:
+                    el = page.locator(selector)
+                    if await el.count() > 0:
+                        date_text = await el.first.inner_text()
+                        if date_text:
+                            date_match = re.search(r'\b\d{2}\.\d{2}\.\d{4}\b', date_text.strip())
+                            if date_match:
+                                logging.info(f"  Дата контракта найдена (метод 2, {selector}): {date_match.group(0)}")
+                                return date_match.group(0)
+                except Exception:
+                    continue
+            
+            # Метод 3: Поиск в тексте страницы
+            all_text = await page.locator("body").first.inner_text()
+            lines = all_text.split('\n')
+            for line in lines:
+                if "Дата заключения" in line or "Дата контракта" in line:
+                    date_match = re.search(r'\b\d{2}\.\d{2}\.\d{4}\b', line)
+                    if date_match:
+                        logging.info(f"  Дата контракта найдена (метод 3): {date_match.group(0)}")
+                        return date_match.group(0)
+                        
         except Exception as e:
-            logging.error(f"Ошибка при извлечении даты контракта: {e}")
+            logging.error(f"Ошибка при извлечении даты контракта: {e}", exc_info=True)
+        
+        logging.warning("  Дата контракта НЕ НАЙДЕНА")
         return "Не указано"
 
     async def expand_medical_details(self, page: Page, search_text: str) -> None:
