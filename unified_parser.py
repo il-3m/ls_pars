@@ -349,188 +349,311 @@ class UnifiedParserApp(QMainWindow):
     def init_ui(self):
         """Инициализация интерфейса"""
         self.setWindowTitle('Универсальный парсер ЕИС (Поиск + Парсинг)')
-        self.setGeometry(100, 100, 1400, 900)
+        self.setGeometry(100, 100, 1600, 1000)
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout()
-        main_layout.setSpacing(10)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Главный горизонтальный layout: слева панель управления, справа таблица
+        main_hlayout = QHBoxLayout()
+        main_hlayout.setSpacing(0)
+        main_hlayout.setContentsMargins(0, 0, 0, 0)
 
         self.setStyleSheet("""
-            QMainWindow { background-color: #f5f5f5; }
-            QLabel { font-size: 14px; font-weight: bold; color: #333; }
+            QMainWindow { background-color: #f0f2f5; }
+            QLabel { font-size: 13px; font-weight: bold; color: #2c3e50; }
             QLineEdit, QDateEdit, QComboBox { 
-                font-size: 14px; padding: 8px; 
-                border: 1px solid #ccc; border-radius: 5px; 
+                font-size: 13px; padding: 8px; 
+                border: 1px solid #bdc3c7; border-radius: 4px; 
+                background-color: white;
+            }
+            QLineEdit:focus, QDateEdit:focus, QComboBox:focus {
+                border: 2px solid #3498db;
             }
             QPushButton { 
-                font-size: 14px; padding: 10px; 
-                background-color: #0078d4; color: white; 
-                border: none; border-radius: 5px; 
+                font-size: 14px; font-weight: bold; padding: 12px 20px; 
+                background-color: #27ae60; color: white; 
+                border: none; border-radius: 6px; 
             }
-            QPushButton:hover { background-color: #005ea2; }
-            QPushButton:disabled { background-color: #cccccc; }
-            QCheckBox { font-size: 14px; color: #333; }
+            QPushButton:hover { background-color: #229954; }
+            QPushButton:disabled { background-color: #95a5a6; }
+            QPushButton#stopButton { background-color: #e74c3c; }
+            QPushButton#stopButton:hover { background-color: #c0392b; }
+            QCheckBox { font-size: 13px; color: #2c3e50; spacing: 8px; }
             QProgressBar { 
-                border: 1px solid #ccc; border-radius: 5px; 
-                text-align: center; font-size: 12px; 
+                border: 1px solid #bdc3c7; border-radius: 4px; 
+                text-align: center; font-size: 11px; font-weight: bold;
+                background-color: #ecf0f1;
             }
+            QProgressBar::chunk { background-color: #3498db; border-radius: 3px; }
             QListWidget { 
-                font-size: 12px; border: 1px solid #ccc; 
-                border-radius: 5px; background-color: white;
+                font-size: 11px; border: 1px solid #bdc3c7; 
+                border-radius: 4px; background-color: white;
             }
-            QListWidget::item { padding: 4px; }
-            QListWidget::item:selected { 
-                background-color: #0078d4; color: white; 
-            }
-            QListWidget::item:hover { background-color: #e5f3ff; }
+            QListWidget::item { padding: 6px; border-bottom: 1px solid #ecf0f1; }
+            QListWidget::item:selected { background-color: #3498db; color: white; }
+            QListWidget::item:hover { background-color: #e8f4f8; }
             QTextEdit { 
-                font-size: 12px; border: 1px solid #ccc; 
-                border-radius: 5px; background-color: white;
+                font-size: 11px; border: 1px solid #bdc3c7; 
+                border-radius: 4px; background-color: white; font-family: 'Consolas', monospace;
             }
+            QTabWidget::pane { 
+                border: 1px solid #bdc3c7; 
+                background-color: white; 
+                border-radius: 4px;
+            }
+            QTabWidget::tab-bar { alignment: left; }
+            QTabBar::tab { 
+                background-color: #ecf0f1; 
+                color: #2c3e50; 
+                padding: 10px 20px; 
+                margin-right: 2px;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+                font-weight: bold;
+            }
+            QTabBar::tab:selected { 
+                background-color: white; 
+                color: #27ae60;
+                border-bottom: 2px solid white;
+            }
+            QTabBar::tab:hover:!selected { background-color: #d5dbdb; }
+            QTableWidget { 
+                font-size: 12px; 
+                border: 1px solid #bdc3c7; 
+                background-color: white;
+                gridline-color: #e0e0e0;
+                alternate-background-color: #f9f9f9;
+            }
+            QTableWidget::item { padding: 8px 10px; border-bottom: 1px solid #e0e0e0; }
+            QTableWidget::item:hover { background-color: #e8f4f8; }
+            QHeaderView::section { 
+                background-color: #2c3e50; 
+                color: white; 
+                padding: 10px; 
+                border: 1px solid #1a252f;
+                font-weight: bold;
+                font-size: 12px;
+            }
+            QHeaderView::section:hover { background-color: #34495e; }
+            QScrollArea { border: none; background-color: transparent; }
+            QSplitter::handle { background-color: #bdc3c7; width: 4px; }
+            QStatusBar { 
+                background-color: #2c3e50; 
+                color: white; 
+                font-size: 12px;
+                padding: 4px;
+            }
+            QMenu { background-color: white; border: 1px solid #bdc3c7; }
+            QMenuBar { background-color: #2c3e50; color: white; }
+            QMenuBar::item:selected { background-color: #34495e; }
         """)
 
-        # Параметры поиска
-        params_group = QFormLayout()
+        # === ЛЕВАЯ ПАНЕЛЬ УПРАВЛЕНИЯ (280px) ===
+        left_panel = QWidget()
+        left_panel.setFixedWidth(320)
+        left_panel.setStyleSheet("background-color: white; border-right: 2px solid #3498db;")
+        left_layout = QVBoxLayout()
+        left_layout.setSpacing(15)
+        left_layout.setContentsMargins(15, 15, 15, 15)
+
+        # Заголовок
+        title_label = QLabel("🔍 ПАРАМЕТРЫ ПОИСКА")
+        title_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #27ae60; margin-bottom: 10px;")
+        left_layout.addWidget(title_label)
+
+        # Вкладки для разделения настроек
+        tab_widget = QTabWidget()
         
+        # === ВКЛАДКА 1: ОСНОВНАЯ ===
+        main_tab = QWidget()
+        main_tab_layout = QVBoxLayout()
+        main_tab_layout.setSpacing(12)
+        main_tab_layout.setContentsMargins(5, 10, 5, 10)
+
+        # Поисковый запрос
+        search_label = QLabel("Поисковый запрос (МНН):")
         self.search_input = QComboBox()
         self.search_input.setEditable(True)
         self.search_input.setPlaceholderText('Например: АЗИТРОМИЦИН')
         self.search_input.completer().setCompletionMode(QCompleter.PopupCompletion)
         self.search_input.setInsertPolicy(QComboBox.NoInsert)
+        main_tab_layout.addWidget(search_label)
+        main_tab_layout.addWidget(self.search_input)
 
+        # Даты
+        date_layout = QHBoxLayout()
+        date_layout.setSpacing(8)
+        
+        date_from_label = QLabel("Дата с:")
         self.date_from = QDateEdit()
         self.date_from.setDate(QDate.currentDate().addMonths(-3))
         self.date_from.setCalendarPopup(True)
+        self.date_from.setStyleSheet("min-width: 110px;")
         
+        date_to_label = QLabel("Дата по:")
         self.date_to = QDateEdit()
         self.date_to.setDate(QDate.currentDate())
         self.date_to.setCalendarPopup(True)
+        self.date_to.setStyleSheet("min-width: 110px;")
+        
+        date_layout.addWidget(date_from_label)
+        date_layout.addWidget(self.date_from)
+        date_layout.addWidget(date_to_label)
+        date_layout.addWidget(self.date_to)
+        main_tab_layout.addLayout(date_layout)
 
+        # Макс. контрактов
+        max_contracts_label = QLabel("Макс. контрактов:")
         self.max_contracts_input = QLineEdit()
         self.max_contracts_input.setText("20")
-        self.max_contracts_input.setFixedWidth(60)
-
-        params_group.addRow(QLabel('Поисковый запрос (МНН):'), self.search_input)
-        params_group.addRow(QLabel('Дата с:'), self.date_from)
-        params_group.addRow(QLabel('Дата по:'), self.date_to)
-        params_group.addRow(QLabel('Макс. контрактов:'), self.max_contracts_input)
+        self.max_contracts_input.setStyleSheet("min-width: 60px;")
+        main_tab_layout.addWidget(max_contracts_label)
+        main_tab_layout.addWidget(self.max_contracts_input)
 
         # Фильтры
-        filter_layout = QHBoxLayout()
-        self.region_checkbox = QCheckBox('Искать только в Москве и МО')
-        self.rosunimed_checkbox = QCheckBox('Искать только в Росунимеде')
+        filter_group = QLabel()
+        filter_group.setStyleSheet("border: 1px solid #e0e0e0; border-radius: 6px; padding: 10px; background-color: #fafafa;")
+        filter_layout = QVBoxLayout()
+        filter_layout.setSpacing(8)
+        
+        self.region_checkbox = QCheckBox('📍 Только Москва и МО')
+        self.rosunimed_checkbox = QCheckBox('🏥 Только Росунимед')
         self.region_checkbox.toggled.connect(lambda: self.on_checkbox_toggled('region'))
         self.rosunimed_checkbox.toggled.connect(lambda: self.on_checkbox_toggled('rosunimed'))
+        
         filter_layout.addWidget(self.region_checkbox)
         filter_layout.addWidget(self.rosunimed_checkbox)
-        filter_layout.addStretch()
+        filter_group.setLayout(filter_layout)
+        main_tab_layout.addWidget(filter_group)
 
-        # Настройки парсинга
-        parse_settings_group = QFormLayout()
+        # Кнопка запуска
+        self.start_button = QPushButton('▶ ЗАПУСТИТЬ ПОИСК')
+        self.start_button.setMinimumHeight(50)
+        self.start_button.clicked.connect(self.start_parsing)
+        main_tab_layout.addWidget(self.start_button)
+
+        # Кнопка стоп
+        self.stop_button = QPushButton('⏹ СТОП')
+        self.stop_button.setObjectName("stopButton")
+        self.stop_button.setEnabled(False)
+        self.stop_button.setMinimumHeight(40)
+        self.stop_button.clicked.connect(self.stop_parsing)
+        main_tab_layout.addWidget(self.stop_button)
+
+        # Прогресс бар
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setValue(0)
+        self.progress_bar.setMinimumHeight(25)
+        main_tab_layout.addWidget(self.progress_bar)
+
+        main_tab_layout.addStretch()
+        main_tab.setLayout(main_tab_layout)
+        tab_widget.addTab(main_tab, "📋 Основная")
+
+        # === ВКЛАДКА 2: НАСТРОЙКИ ===
+        settings_tab = QWidget()
+        settings_tab_layout = QVBoxLayout()
+        settings_tab_layout.setSpacing(12)
+        settings_tab_layout.setContentsMargins(5, 10, 5, 10)
+
+        # Таймауты и задержки
+        timing_group = QLabel("⏱ Таймауты и задержки")
+        timing_group.setStyleSheet("font-weight: bold; color: #27ae60; border: 1px solid #e0e0e0; border-radius: 6px; padding: 10px;")
+        timing_layout = QFormLayout()
+        timing_layout.setSpacing(8)
         
         self.timeout_ms_input = QLineEdit()
         self.timeout_ms_input.setText("90000")
-        
         self.expand_rounds_input = QLineEdit()
         self.expand_rounds_input.setText("5")
-        
         self.page_load_delay_input = QLineEdit()
         self.page_load_delay_input.setText("1200")
-        
         self.expand_delay_input = QLineEdit()
         self.expand_delay_input.setText("800")
+        
+        timing_layout.addRow("Таймаут (мс):", self.timeout_ms_input)
+        timing_layout.addRow("Раунды раскрытия:", self.expand_rounds_input)
+        timing_layout.addRow("Задержка загрузки (мс):", self.page_load_delay_input)
+        timing_layout.addRow("Задержка раскрытия (мс):", self.expand_delay_input)
+        
+        timing_group_layout = QVBoxLayout()
+        timing_group_layout.addLayout(timing_layout)
+        timing_group.setLayout(timing_group_layout)
+        settings_tab_layout.addWidget(timing_group)
 
-        parse_settings_group.addRow(QLabel('Таймаут загрузки (мс):'), self.timeout_ms_input)
-        parse_settings_group.addRow(QLabel('Раунды раскрытия:'), self.expand_rounds_input)
-        parse_settings_group.addRow(QLabel('Задержка после загрузки (мс):'), self.page_load_delay_input)
-        parse_settings_group.addRow(QLabel('Задержка раскрытия (мс):'), self.expand_delay_input)
-
-        # Настройки экспорта
-        export_group = QFormLayout()
+        # Пути к файлам
+        paths_group = QLabel("📁 Пути к файлам")
+        paths_group.setStyleSheet("font-weight: bold; color: #27ae60; border: 1px solid #e0e0e0; border-radius: 6px; padding: 10px;")
+        paths_layout = QFormLayout()
+        paths_layout.setSpacing(8)
         
         self.archive_dir_input = QLineEdit()
         self.archive_dir_input.setText("archive")
-        
         self.csv_file_input = QLineEdit()
         self.csv_file_input.setText("export/unified_result.csv")
-        
         self.xlsx_file_input = QLineEdit()
         self.xlsx_file_input.setText("export/unified_result.xlsx")
-
-        export_group.addRow(QLabel('Папка архива:'), self.archive_dir_input)
-        export_group.addRow(QLabel('CSV файл:'), self.csv_file_input)
-        export_group.addRow(QLabel('XLSX файл:'), self.xlsx_file_input)
-
-        # Кнопки
-        button_layout = QHBoxLayout()
-        self.start_button = QPushButton('Запустить полный цикл')
-        self.start_button.clicked.connect(self.start_parsing)
-        self.stop_button = QPushButton('Стоп')
-        self.stop_button.setEnabled(False)
-        self.stop_button.clicked.connect(self.stop_parsing)
-        self.open_csv_button = QPushButton('Открыть CSV')
-        self.open_csv_button.clicked.connect(self.open_csv)
-        self.open_folder_button = QPushButton('Открыть папку')
-        self.open_folder_button.clicked.connect(self.open_folder)
         
-        button_layout.addWidget(self.start_button)
-        button_layout.addWidget(self.stop_button)
-        button_layout.addWidget(self.open_csv_button)
-        button_layout.addWidget(self.open_folder_button)
-        button_layout.addStretch()
-
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setValue(0)
-
-        # Разделитель для списка ссылок и лога
-        splitter = QSplitter(Qt.Vertical)
-
-        # Список найденных ссылок
-        links_label = QLabel("Найденные ссылки:")
-        self.links_list = QListWidget()
-        self.links_list.itemDoubleClicked.connect(self.open_link)
+        paths_layout.addRow("Папка архива:", self.archive_dir_input)
+        paths_layout.addRow("CSV файл:", self.csv_file_input)
+        paths_layout.addRow("XLSX файл:", self.xlsx_file_input)
         
-        links_widget = QWidget()
-        links_layout = QVBoxLayout()
-        links_layout.setContentsMargins(0, 0, 0, 0)
-        links_layout.addWidget(links_label)
-        links_layout.addWidget(self.links_list)
-        links_widget.setLayout(links_layout)
+        paths_group_layout = QVBoxLayout()
+        paths_group_layout.addLayout(paths_layout)
+        paths_group.setLayout(paths_group_layout)
+        settings_tab_layout.addWidget(paths_group)
 
-        # Лог выполнения
-        log_label = QLabel("Лог выполнения:")
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        self.log_text.setMaximumHeight(300)
-        
-        log_widget = QWidget()
-        log_layout = QVBoxLayout()
-        log_layout.setContentsMargins(0, 0, 0, 0)
-        log_layout.addWidget(log_label)
-        log_layout.addWidget(self.log_text)
-        log_widget.setLayout(log_layout)
+        settings_tab_layout.addStretch()
+        settings_tab.setLayout(settings_tab_layout)
+        tab_widget.addTab(settings_tab, "⚙ Настройки")
 
-        splitter.addWidget(links_widget)
-        splitter.addWidget(log_widget)
-        splitter.setStretchFactor(0, 2)
-        splitter.setStretchFactor(1, 1)
+        left_layout.addWidget(tab_widget)
 
         # Статистика
-        self.stats_layout = QHBoxLayout()
-        self.total_links_label = QLabel("Ссылок найдено: 0")
-        self.total_rows_label = QLabel("Строк распаршено: 0")
-        self.stats_layout.addWidget(self.total_links_label)
-        self.stats_layout.addWidget(self.total_rows_label)
-        self.stats_layout.addStretch()
-
-        # Кнопка скрыть/раскрыть логи
-        self.toggle_logs_button = QPushButton('▼ Скрыть поисковые и технические запросы')
-        self.toggle_logs_button.clicked.connect(self.toggle_logs_visibility)
-        self.logs_collapsed = False
+        stats_group = QLabel()
+        stats_group.setStyleSheet("border: 2px solid #27ae60; border-radius: 8px; padding: 12px; background-color: #e8f8f5;")
+        stats_layout = QVBoxLayout()
+        stats_layout.setSpacing(8)
         
-        # Таблица результатов
+        self.total_links_label = QLabel("🔗 Ссылок найдено: 0")
+        self.total_links_label.setStyleSheet("font-size: 13px; font-weight: bold;")
+        self.total_rows_label = QLabel("📊 Строк распаршено: 0")
+        self.total_rows_label.setStyleSheet("font-size: 13px; font-weight: bold;")
+        
+        stats_layout.addWidget(self.total_links_label)
+        stats_layout.addWidget(self.total_rows_label)
+        stats_group.setLayout(stats_layout)
+        left_layout.addWidget(stats_group)
+
+        # Кнопки действий
+        actions_layout = QHBoxLayout()
+        actions_layout.setSpacing(8)
+        
+        self.open_csv_button = QPushButton('📄 CSV')
+        self.open_csv_button.clicked.connect(self.open_csv)
+        self.open_folder_button = QPushButton('📂 Папка')
+        self.open_folder_button.clicked.connect(self.open_folder)
+        
+        actions_layout.addWidget(self.open_csv_button)
+        actions_layout.addWidget(self.open_folder_button)
+        left_layout.addLayout(actions_layout)
+
+        left_layout.addStretch()
+        left_panel.setLayout(left_layout)
+
+        # === ПРАВАЯ ЧАСТЬ: ТАБЛИЦА РЕЗУЛЬТАТОВ ===
+        right_panel = QWidget()
+        right_layout = QVBoxLayout()
+        right_layout.setSpacing(0)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Заголовок таблицы
+        table_header = QLabel("📋 РЕЗУЛЬТАТЫ ПАРСИНГА")
+        table_header.setStyleSheet("font-size: 16px; font-weight: bold; color: #27ae60; padding: 10px; background-color: white; border-bottom: 2px solid #3498db;")
+        right_layout.addWidget(table_header)
+
+        # Таблица результатов - занимает всё доступное место
         self.results_table = QTableWidget()
         self.results_table.setColumnCount(len(FIELD_ORDER))
         self.results_table.setHorizontalHeaderLabels([EXPORT_HEADERS_RU[FIELD_ORDER[i]] for i in range(len(FIELD_ORDER))])
@@ -538,64 +661,88 @@ class UnifiedParserApp(QMainWindow):
         self.results_table.horizontalHeader().setStretchLastSection(True)
         self.results_table.verticalHeader().setVisible(False)
         self.results_table.setAlternatingRowColors(True)
-        self.results_table.setStyleSheet("""
-            QTableWidget { 
-                font-size: 12px; 
-                border: 1px solid #ccc; 
-                border-radius: 5px; 
-                background-color: white;
-                gridline-color: #ddd;
-            }
-            QTableWidget::item { padding: 4px; }
-            QHeaderView::section { 
-                background-color: #0078d4; 
-                color: white; 
-                padding: 8px; 
-                border: 1px solid #005ea2;
-                font-weight: bold;
-            }
-            QTableWidget::item:nth-child(even) { background-color: #f9f9f9; }
-            QTableWidget::item:nth-child(odd) { background-color: white; }
-        """)
+        self.results_table.setMinimumHeight(500)  # Минимум 50% экрана
+        
+        # Устанавливаем начальные ширины колонок
+        for i in range(len(FIELD_ORDER)):
+            self.results_table.setColumnWidth(i, 150)
+        
+        right_layout.addWidget(self.results_table)
+        right_panel.setLayout(right_layout)
 
-        # Основной макет - верхняя часть с параметрами и логами
-        top_widget = QWidget()
-        top_layout = QVBoxLayout()
-        top_layout.setContentsMargins(0, 0, 0, 0)
-        top_layout.addLayout(params_group)
-        top_layout.addLayout(filter_layout)
-        top_layout.addLayout(parse_settings_group)
-        top_layout.addLayout(export_group)
-        top_layout.addLayout(button_layout)
-        top_layout.addWidget(self.progress_bar)
-        top_layout.addWidget(splitter)
-        top_layout.addLayout(self.stats_layout)
-        top_layout.addWidget(self.toggle_logs_button)
-        top_widget.setLayout(top_layout)
-        
-        # Нижний контейнер для скрываемых элементов (логи + ссылки)
-        self.logs_scroll = QScrollArea()
-        self.logs_scroll.setWidgetResizable(True)
-        self.logs_scroll.setMaximumHeight(400)
-        logs_content = QWidget()
-        logs_content.setLayout(main_layout)
-        self.logs_scroll.setWidget(logs_content)
-        
+        # Добавляем панели в главный layout
+        main_hlayout.addWidget(left_panel)
+        main_hlayout.addWidget(right_panel)
+        main_hlayout.setStretch(1, 1)  # Правая часть растягивается
+
+        central_widget.setLayout(main_hlayout)
+
+        # Нижняя панель: логи и ссылки (скрываемая)
+        bottom_panel = QWidget()
+        bottom_panel.setMaximumHeight(250)
+        bottom_panel.setStyleSheet("background-color: white; border-top: 2px solid #3498db;")
+        bottom_layout = QHBoxLayout()
+        bottom_layout.setContentsMargins(10, 10, 10, 10)
+
+        # Список ссылок
+        links_widget = QWidget()
+        links_widget.setFixedWidth(400)
+        links_layout = QVBoxLayout()
+        links_layout.setContentsMargins(0, 0, 0, 0)
+        links_label = QLabel("<b>🔗 Найденные ссылки:</b>")
+        self.links_list = QListWidget()
+        self.links_list.itemDoubleClicked.connect(self.open_link)
+        links_layout.addWidget(links_label)
+        links_layout.addWidget(self.links_list)
+        links_widget.setLayout(links_layout)
+
+        # Разделитель
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.addWidget(links_widget)
+
+        # Лог выполнения
+        log_widget = QWidget()
+        log_layout = QVBoxLayout()
+        log_layout.setContentsMargins(0, 0, 0, 0)
+        log_label = QLabel("<b>📝 Лог выполнения:</b>")
+        self.log_text = QTextEdit()
+        self.log_text.setReadOnly(True)
+        log_layout.addWidget(log_label)
+        log_layout.addWidget(self.log_text)
+        log_widget.setLayout(log_layout)
+        splitter.addWidget(log_widget)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 3)
+
+        bottom_layout.addWidget(splitter)
+        bottom_panel.setLayout(bottom_layout)
+
         # Главный вертикальный layout
         main_vlayout = QVBoxLayout()
-        main_vlayout.setSpacing(10)
+        main_vlayout.setSpacing(0)
         main_vlayout.setContentsMargins(0, 0, 0, 0)
-        main_vlayout.addWidget(top_widget)
-        main_vlayout.addWidget(self.logs_scroll)  # Скрываемый блок с логами
-        main_vlayout.addWidget(QLabel("Результаты парсинга:"))
-        main_vlayout.addWidget(self.results_table)
+        main_vlayout.addWidget(central_widget)
+        main_vlayout.addWidget(bottom_panel)
+
+        # Контейнер для всего
+        container = QWidget()
+        container.setLayout(main_vlayout)
+        self.setCentralWidget(container)
+
+        # Скрываемая логика
+        self.bottom_panel_visible = True
+        self.toggle_logs_button = QPushButton('▼ Скрыть логи и ссылки')
+        self.toggle_logs_button.clicked.connect(self.toggle_logs_visibility)
+        self.toggle_logs_button.setStyleSheet("padding: 6px; font-size: 12px;")
         
-        central_widget.setLayout(main_vlayout)
+        # Добавляем кнопку в левую панель
+        left_layout.addWidget(self.toggle_logs_button)
 
         self.statusBar = QStatusBar()
         self.setStatusBar(self.statusBar)
-        self.status_label = QLabel("Готов")
+        self.status_label = QLabel("✅ Готов к работе")
         self.statusBar.addPermanentWidget(self.status_label)
+        self.statusBar.setStyleSheet("color: white;")
 
         # Меню
         self.create_menu()
@@ -697,16 +844,16 @@ class UnifiedParserApp(QMainWindow):
 
     def toggle_logs_visibility(self):
         """Скрыть/раскрыть панель логов и ссылок"""
-        if self.logs_collapsed:
-            # Раскрыть
-            self.logs_scroll.setVisible(True)
-            self.toggle_logs_button.setText('▼ Скрыть поисковые и технические запросы')
-            self.logs_collapsed = False
-        else:
+        if self.bottom_panel_visible:
             # Скрыть
-            self.logs_scroll.setVisible(False)
-            self.toggle_logs_button.setText('▶ Раскрыть поисковые и технические запросы')
-            self.logs_collapsed = True
+            self.bottom_panel.setVisible(False)
+            self.toggle_logs_button.setText('▶ Раскрыть логи и ссылки')
+            self.bottom_panel_visible = False
+        else:
+            # Раскрыть
+            self.bottom_panel.setVisible(True)
+            self.toggle_logs_button.setText('▼ Скрыть логи и ссылки')
+            self.bottom_panel_visible = True
 
     def add_row_to_table(self, row_data: dict):
         """Добавление строки данных в таблицу результатов"""
