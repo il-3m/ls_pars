@@ -1,3 +1,0 @@
-Page.goto: net::ERR_CONNECTION_RESET at https://zakupki.gov.ru/epz/contract/contractCard/payment-info-and-target-of-order.html?reestrNumber=1770902428325000013&contractInfoId=106484706
-Call log:
-  - navigating to "https://zakupki.gov.ru/epz/contract/contractCard/payment-info-and-target-of-order.html?reestrNumber=1770902428325000013&contractInfoId=106484706", waiting until "domcontentloaded"

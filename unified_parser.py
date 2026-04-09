@@ -66,7 +66,7 @@ from PyQt5.QtWidgets import (
     QGridLayout, QSpacerItem, QSizePolicy,
     QComboBox, QCompleter, QFormLayout, QStatusBar,
     QListWidget, QListWidgetItem, QSplitter, QTableWidget, QTableWidgetItem,
-    QHeaderView, QFrame, QScrollArea
+    QHeaderView, QFrame, QScrollArea, QTabWidget
 )
 from PyQt5.QtCore import QDate, Qt, QThread, pyqtSignal, QStringListModel, QUrl
 from PyQt5.QtGui import QColor, QDesktopServices
