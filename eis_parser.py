@@ -756,12 +756,14 @@ class EISParser:
         return None
 
     async def _expand_objects(self, frame: Frame) -> None:
+        """Расширенное раскрытие блоков с объектами закупки и деталями ЛС."""
         try:
             anchor = frame.locator("text=Объекты закупки").first
             await anchor.scroll_into_view_if_needed(timeout=4000)
         except Error:
             pass
 
+        # Раунд 1: Кликаем по aria-expanded элементам
         for _ in range(self.expand_rounds):
             toggles = frame.locator(
                 "[aria-expanded='false'], button[aria-expanded='false'], [role='button'][aria-expanded='false']"
@@ -783,6 +785,60 @@ class EISParser:
             if clicked == 0:
                 break
             await frame.page.wait_for_timeout(500)
+
+        # Раунд 2: Дополнительные селекторы для toggle-элементов
+        toggle_selectors = [
+            "button[class*='toggle']",
+            "[class*='expand']",
+            "[class*='collapse']",
+            ".purchase-object__header",
+            ".lot-info__toggle",
+        ]
+        
+        for selector in toggle_selectors:
+            try:
+                elements = frame.locator(selector)
+                count = await elements.count()
+                for i in range(min(count, 50)):
+                    try:
+                        el = elements.nth(i)
+                        aria_expanded = await el.get_attribute("aria-expanded")
+                        if aria_expanded == "true":
+                            continue
+                        await el.scroll_into_view_if_needed(timeout=1000)
+                        await el.click(timeout=1000)
+                    except Error:
+                        continue
+            except Error:
+                continue
+
+        # Раунд 3: Принудительно показываем скрытые элементы через JavaScript
+        try:
+            await frame.evaluate("""
+                var hiddenElements = document.querySelectorAll('[style*="display: none"], [style*="visibility: hidden"]');
+                hiddenElements.forEach(function(el) {
+                    el.style.display = 'block';
+                    el.style.visibility = 'visible';
+                    el.style.opacity = '1';
+                });
+                
+                var collapsedSections = document.querySelectorAll('.collapse, [class*="collapse"]');
+                collapsedSections.forEach(function(el) {
+                    el.classList.remove('collapse');
+                    el.classList.add('show');
+                    el.style.display = 'block';
+                });
+                
+                var expandableElements = document.querySelectorAll('[aria-expanded]');
+                expandableElements.forEach(function(el) {
+                    el.setAttribute('aria-expanded', 'true');
+                });
+            """)
+        except Error:
+            pass
+
+        # Финальная пауза для рендеринга
+        await frame.page.wait_for_timeout(2000)
 
     def _normalize_record(self, raw: dict) -> ParseRecord:
         rec = ParseRecord(**{k: _clean(raw.get(k, "")) for k in FIELD_ORDER})
