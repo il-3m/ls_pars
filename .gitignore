@@ -1,8 +1,14 @@
 ```
-# Compiled Python files
+node_modules/
+*.log
+*.tmp
+*.swp
+*.swo
 *.pyc
 __pycache__/
-
-# HTML coverage reports
-test_duplicates.html
+.DS_Store
+Thumbs.db
+.env
+.env.local
+*.env.*
 ```
