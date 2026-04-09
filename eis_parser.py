@@ -436,13 +436,18 @@ class EISParser:
         self,
         page: Page,
         url: str,
-        search_text: str,
+        search_text: str,  # Параметр оставлен для совместимости, но НЕ используется для фильтрации
         contract_date: str,
         customer: str,
         contract_number: str,
         reestr_number: str,
     ) -> list[ParseRecord]:
-        """Парсинг страницы контракта с использованием JS-скрипта (как в старом парсере)."""
+        """
+        Парсит страницу контракта и возвращает список ВСЕХ лекарств.
+        ВАЖНО: search_text игнорируется - парсятся ВСЕ лекарства со страницы.
+        Фильтрация должна выполняться на уровне вызывающего кода, если нужна.
+        Использует проверенный JS-скрипт EXTRACT_SCRIPT из старого парсера.
+        """
         from pathlib import Path
         import json
         from datetime import datetime
@@ -455,13 +460,15 @@ class EISParser:
         raw_dir.mkdir(parents=True, exist_ok=True)
         parsed_dir.mkdir(parents=True, exist_ok=True)
 
+        logging.info(f"[PARSE] Начало обработки страницы: {url}")
+        
         await page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms)
         await page.wait_for_timeout(self.page_load_delay)
 
         await self._close_overlays(page)
         frame = await self._find_frame_with_objects(page)
         if frame is None:
-            logging.warning("  Не найден контекст с блоком 'Объекты закупки', пробуем main page...")
+            logging.warning("[WARN] Не найден контекст с блоком 'Объекты закупки', пробуем main page...")
             frame = page
 
         await self._expand_objects(frame)
@@ -473,12 +480,32 @@ class EISParser:
         except Exception as e:
             logging.debug(f"  Не удалось сохранить HTML: {e}")
 
+        # КРИТИЧЕСКИ ВАЖНО: Выполняем JS-скрипт для извлечения ВСЕХ строк с лекарствами
+        logging.info("[INFO] Выполнение JS-скрипта EXTRACT_SCRIPT...")
         payload = await frame.evaluate(EXTRACT_SCRIPT)
-        records = [self._normalize_record(item) for item in payload or []]
+        
+        if not payload:
+            logging.warning("[WARN] JS-скрипт вернул пустой результат!")
+            logging.warning("[WARN] Проверьте, что страница содержит блок 'Объекты закупки' и данные раскрыты")
+            return []
+        
+        logging.info(f"[INFO] JS-скрипт вернул {len(payload)} сырых записей")
+        
+        # Нормализация КАЖДОЙ записи из payload
+        records = []
+        for item in payload:
+            rec = self._normalize_record(item)
+            records.append(rec)
+        
+        # Слияние разбитых записей (основная + метаданные)
         records = self._merge_split_records(records)
+        
+        # Финализация записей
         records = [self._finalize_record(rec) for rec in records]
         
-        # Добавляем метаданные контракта к каждой записи
+        logging.info(f"[INFO] После нормализации и слияния: {len(records)} записей")
+        
+        # Добавляем метаданные контракта к КАЖДОЙ записи (без фильтрации!)
         rows = []
         for r in records:
             row_dict = r.as_row()
@@ -495,6 +522,12 @@ class EISParser:
             )
         except Exception as e:
             logging.debug(f"  Не удалось сохранить JSON: {e}")
+
+        logging.info(f"[SUCCESS] Итоговое количество записей: {len(rows)}")
+        
+        # Логируем первые 3 записи для отладки
+        for i, row in enumerate(rows[:3]):
+            logging.info(f"  Запись {i+1}: name={row.get('name', '')[:50]}, qty={row.get('qty_consumption_unit', '')}, price={row.get('price_per_unit', '')}")
 
         # Конвертируем обратно в ParseRecord
         results = []
