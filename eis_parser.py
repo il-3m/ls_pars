@@ -984,6 +984,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--expand-rounds", type=int, default=4, help="Expand passes for nested rows")
     p.add_argument("--page-load-delay", type=int, default=1200, help="Delay after page load (ms)")
     p.add_argument("--expand-delay", type=int, default=800, help="Delay after expand operations (ms)")
+    
+    # Аргументы для модуля поиска контрактов (консольный режим)
+    search_group = p.add_argument_group("Поиск контрактов", "Параметры для автоматического поиска контрактов на zakupki.gov.ru")
+    search_group.add_argument("--search", type=str, help="Поисковый запрос (МНН лекарственного средства)")
+    search_group.add_argument("--date-from", type=str, help="Дата с (формат ДД.ММ.ГГГГ), по умолчанию - 3 месяца назад")
+    search_group.add_argument("--date-to", type=str, help="Дата по (формат ДД.ММ.ГГГГ), по умолчанию - сегодня")
+    search_group.add_argument("--max-contracts", type=int, default=20, help="Максимальное количество контрактов (по умолчанию 20)")
+    search_group.add_argument("--moscow-only", action="store_true", help="Искать только в Москве и Московской области")
+    search_group.add_argument("--rosunimed-only", action="store_true", help="Искать только контракты РОСУНИМЕД")
+    
     return p
 
 
@@ -2227,6 +2237,9 @@ def main() -> int:
     parser.add_argument("--search-gui", action="store_true", help="Запуск GUI модуля поиска контрактов")
     args = parser.parse_args()
     
+    # Запуск консольного режима поиска с автоматическим парсингом
+    if args.search:
+        return run_search_mode(args)
     if args.search_gui:
         return launch_search_gui()
     if args.gui:
@@ -2236,6 +2249,462 @@ def main() -> int:
     except KeyboardInterrupt:
         print("Interrupted by user", file=sys.stderr)
         return 130
+
+
+def run_search_mode(args) -> int:
+    """Консольный режим поиска и парсинга контрактов"""
+    from datetime import datetime, timedelta
+    
+    search_text = args.search
+    max_contracts = args.max_contracts
+    moscow_only = args.moscow_only
+    rosunimed_only = args.rosunimed_only
+    
+    # Обработка дат
+    if args.date_from:
+        date_from = args.date_from
+    else:
+        date_from = (datetime.now() - timedelta(days=90)).strftime("%d.%m.%Y")
+    
+    if args.date_to:
+        date_to = args.date_to
+    else:
+        date_to = datetime.now().strftime("%d.%m.%Y")
+    
+    print(f"=== Поиск контрактов: {search_text} ===")
+    print(f"Период: {date_from} - {date_to}")
+    print(f"Макс. контрактов: {max_contracts}")
+    if moscow_only:
+        print("Фильтр: Москва и МО")
+    if rosunimed_only:
+        print("Фильтр: РОСУНИМЕД")
+    print()
+    
+    logging.info(f"Начат поиск в консольном режиме: {search_text}")
+    
+    all_results = []
+    driver = None
+    
+    try:
+        # Инициализация WebDriver (Selenium)
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+        chrome_options.add_argument("--ignore-certificate-errors")
+        chrome_options.add_argument("--disable-gcm")
+        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        
+        driver = webdriver.Chrome(
+            service=Service(ChromeDriverManager().install()),
+            options=chrome_options
+        )
+        
+        base_url = "https://zakupki.gov.ru/epz/contract/search/results.html"
+        params = {
+            "searchString": search_text,
+            "morphology": "on",
+            "search-filter": "Дате+размещения",
+            "fz44": "on",
+            "contractStageList_1": "on",
+            "contractStageData": "1",
+            "budgetLevelsIdNameHidden": "{}",
+            "contractDateFrom": date_from,
+            "contractDateTo": date_to,
+            "sortBy": "UPDATE_DATE",
+            "pageNumber": "1",
+            "sortDirection": "false",
+            "recordsPerPage": "_10",
+            "showLotsInfoHidden": "false",
+            "strictEqual": "true"
+        }
+        
+        # Условные параметры фильтров
+        if rosunimed_only:
+            params["customerIdOrg"] = '14269:ФЕДЕРАЛЬНОЕ ГОСУДАРСТВЕННОЕ БЮДЖЕТНОЕ ОБРАЗОВАТЕЛЬНОЕ УЧРЕЖДЕНИЕ ВЫСШЕГО ОБРАЗОВАНИЯ "РОССИЙСКИЙ УНИВЕРСИТЕТ МЕДИЦИНЫ" МИНИСТЕРСТВА ЗДРАВООХРАНЕНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИzZ03731000459zZ666998zZ63203zZ7707082145zZ'
+        elif moscow_only:
+            params["customerPlace"] = "77000000000,50000000000"
+            params["customerPlaceCodes"] = "77000000000,50000000000"
+        
+        url = base_url + "?" + "&".join([f"{k}={v}" for k, v in params.items()])
+        logging.info(f"Запрос: {url}")
+        print(f"URL поиска: {url[:100]}...")
+        
+        # Загрузка первой страницы с повторными попытками
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                driver.get(url)
+                print("Ожидание загрузки страницы...")
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, "a[href]"))
+                )
+                break
+            except Exception as e:
+                print(f"Попытка {attempt + 1}/{max_attempts} не удалась: {e}")
+                if attempt == max_attempts - 1:
+                    raise Exception("Не удалось загрузить страницу")
+                time.sleep(3)
+        
+        # Определение общего числа страниц
+        try:
+            pagination = driver.find_elements(By.CSS_SELECTOR, ".paginator a")
+            page_numbers = []
+            for a in pagination:
+                try:
+                    page_numbers.append(int(a.text))
+                except ValueError:
+                    continue
+            total_pages = max(page_numbers) if page_numbers else 1
+        except Exception:
+            total_pages = 1
+        
+        print(f"Всего страниц: {total_pages}")
+        
+        contracts_count = 0
+        
+        # Цикл по страницам результатов
+        for page in range(1, total_pages + 1):
+            if contracts_count >= max_contracts:
+                break
+            
+            params["pageNumber"] = str(page)
+            url = base_url + "?" + "&".join([f"{k}={v}" for k, v in params.items()])
+            driver.get(url)
+            print(f"Страница {page}/{total_pages}")
+            logging.info(f"Страница {page}/{total_pages}")
+            
+            # Извлечение ссылок common-info.html
+            links = driver.find_elements(By.CSS_SELECTOR, "a[href]")
+            original_links = [
+                link.get_attribute("href")
+                for link in links
+                if link.get_attribute("href") and "contract/contractCard/common-info.html" in link.get_attribute("href")
+            ]
+            unique_links = list(set(original_links))
+            print(f"Найдено {len(unique_links)} уникальных ссылок на странице")
+            logging.info(f"Найдено {len(unique_links)} уникальных ссылок на странице")
+            
+            # Обработка каждой найденной ссылки
+            for original_link in unique_links:
+                if contracts_count >= max_contracts:
+                    break
+                
+                driver.get(original_link)
+                
+                # Проверка на CAPTCHA
+                if "captcha" in driver.page_source.lower():
+                    print("⚠ Обнаружена CAPTCHA! Пропуск.")
+                    logging.warning("Обнаружена CAPTCHA, пропуск")
+                    continue
+                
+                # Извлечение даты заключения контракта
+                contract_date = extract_contract_date_static(driver)
+                
+                # Преобразование ссылки для целевого парсера
+                payment_link = original_link.replace("common-info.html", "payment-info-and-target-of-order.html")
+                driver.get(payment_link)
+                
+                # Повторная проверка на CAPTCHA
+                if "captcha" in driver.page_source.lower():
+                    continue
+                
+                # Вызов метода parse_contract_page основного парсера
+                results = parse_contract_page_static(driver, search_text, contract_date)
+                if results:
+                    for result in results:
+                        if contracts_count >= max_contracts:
+                            break
+                        # Добавляем оригинальную ссылку как последний элемент
+                        all_results.append((*result, original_link))
+                        contracts_count += 1
+                        print(f"✓ Спаршено: {result[0][:50] if result[0] else 'N/A'}...")
+        
+        if all_results:
+            print(f"\n=== Найдено записей: {len(all_results)} ===")
+            logging.info(f"Найдено записей: {len(all_results)}")
+            
+            # Экспорт в CSV
+            csv_path = args.out_csv if args.out_csv else "export/result.csv"
+            Path(csv_path).parent.mkdir(parents=True, exist_ok=True)
+            
+            fieldnames = [
+                "Наименование", "Страна", "КТРУ/ОКПД2", "Тип объекта",
+                "Количество", "Цена за ед.", "Сумма с НДС", "Заказчик",
+                "№ контракта", "№ реестра", "Лек. форма", "Дозировка",
+                "Дата контракта", "Торговое наименование", "Номер РУ", "Ссылка"
+            ]
+            
+            with open(csv_path, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
+                writer.writerow(fieldnames)
+                for row in all_results:
+                    writer.writerow(row)
+            
+            print(f"Результаты сохранены в: {csv_path}")
+            
+            # Экспорт в XLSX если доступен pandas
+            if PANDAS_AVAILABLE and args.out_xlsx:
+                df = pd.DataFrame(all_results, columns=fieldnames)
+                df.to_excel(args.out_xlsx, index=False)
+                print(f"Excel экспортирован в: {args.out_xlsx}")
+        else:
+            print("\nДанные не найдены.")
+            logging.info("Данные не найдены.")
+        
+        print("\nПоиск завершён")
+        logging.info("Поиск завершён")
+        
+    except Exception as e:
+        print(f"Ошибка: {e}")
+        logging.error(f"Ошибка в режиме поиска: {e}", exc_info=True)
+        return 1
+    finally:
+        if driver:
+            driver.quit()
+    
+    return 0
+
+
+def extract_contract_date_static(driver):
+    """Извлечение даты заключения контракта со страницы common-info.html"""
+    try:
+        title_element = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located(
+                (By.XPATH, "//span[@class='section__title' and contains(text(), 'Дата заключения контракта')]")
+            )
+        )
+        info_element = title_element.find_element(By.XPATH, "./following-sibling::span[@class='section__info']")
+        if info_element:
+            text = info_element.text.strip()
+            date_match = re.search(r'\b\d{2}\.\d{2}\.\d{4}\b', text)
+            if date_match:
+                return date_match.group(0)
+    except Exception as e:
+        logging.error(f"Ошибка при извлечении даты: {e}")
+    return "Не указано"
+
+
+def parse_contract_page_static(driver, search_text, contract_date):
+    """Парсинг страницы контракта с раскрытием всех блоков (статическая версия)"""
+    try:
+        # Раскрываем ВСЕ блоки
+        expand_medical_details_static(driver, search_text)
+        
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "table"))
+        )
+        
+        all_tables = driver.find_elements(By.CSS_SELECTOR, "table")
+        logging.info(f"  Найдено таблиц: {len(all_tables)}")
+        
+        results = []
+        search_text_lower = search_text.lower()
+        
+        for table_num, table in enumerate(all_tables, 1):
+            try:
+                rows = table.find_elements(By.CSS_SELECTOR, "tr")
+                if len(rows) < 2:
+                    continue
+                
+                table_text = table.text.lower()
+                
+                if search_text_lower not in table_text:
+                    continue
+                
+                logging.info(f"  Таблица {table_num} содержит '{search_text}'")
+                
+                header_indices = {
+                    "наименование": None, "ктру": None, "тип": None,
+                    "количество": None, "цена": None, "сумма": None
+                }
+                
+                header_row = rows[0]
+                header_cells = header_row.find_elements(By.CSS_SELECTOR, "th, td")
+                header_texts = [cell.text.strip().lower() for cell in header_cells]
+                
+                for i, text in enumerate(header_texts):
+                    if "наименование" in text or "объект закупки" in text:
+                        header_indices["наименование"] = i
+                    elif "ктру" in text or "окпд" in text:
+                        header_indices["ктру"] = i
+                    elif "тип" in text:
+                        header_indices["тип"] = i
+                    elif "количество" in text or "объем" in text:
+                        header_indices["количество"] = i
+                    elif "цена" in text:
+                        header_indices["цена"] = i
+                    elif "сумма" in text:
+                        header_indices["сумма"] = i
+                
+                # Таблица с деталями лекарств
+                if any(h in table_text for h in ["торговое наименование", "номер ру", "лекарственная форма", "дозировка"]):
+                    logging.info(f"    Таблица с деталями лекарств!")
+                    
+                    tn_idx = ru_idx = form_idx = dose_idx = None
+                    
+                    for idx, h in enumerate(header_texts):
+                        if "торговое наименование" in h or "тн" in h:
+                            tn_idx = idx
+                        elif "номер ру" in h or "рег. удостоверение" in h:
+                            ru_idx = idx
+                        elif "лекарственная форма" in h or "форма выпуска" in h:
+                            form_idx = idx
+                        elif "дозировка" in h or "доза" in h:
+                            dose_idx = idx
+                    
+                    for row_idx in range(1, len(rows)):
+                        row = rows[row_idx]
+                        cells = row.find_elements(By.CSS_SELECTOR, "td, th")
+                        if len(cells) < max(filter(lambda x: x is not None, [tn_idx, ru_idx, form_idx, dose_idx]) or [0]):
+                            continue
+                        
+                        trade_name = cells[tn_idx].text.strip() if tn_idx is not None and tn_idx < len(cells) else ""
+                        ru = cells[ru_idx].text.strip() if ru_idx is not None and ru_idx < len(cells) else ""
+                        form = cells[form_idx].text.strip() if form_idx is not None and form_idx < len(cells) else ""
+                        dose = cells[dose_idx].text.strip() if dose_idx is not None and dose_idx < len(cells) else ""
+                        
+                        # Сбор данных из основной таблицы
+                        name = cells[header_indices["наименование"]].text.strip() if header_indices["наименование"] is not None and header_indices["наименование"] < len(cells) else ""
+                        country = cells[header_indices["ктру"]].text.strip() if header_indices["ктру"] is not None and header_indices["ктру"] < len(cells) else ""
+                        okpd2 = ""
+                        obj_type = cells[header_indices["тип"]].text.strip() if header_indices["тип"] is not None and header_indices["тип"] < len(cells) else ""
+                        qty = cells[header_indices["количество"]].text.strip() if header_indices["количество"] is not None and header_indices["количество"] < len(cells) else ""
+                        price = cells[header_indices["цена"]].text.strip() if header_indices["цена"] is not None and header_indices["цена"] < len(cells) else ""
+                        sum_rub = cells[header_indices["сумма"]].text.strip() if header_indices["сумма"] is not None and header_indices["сумма"] < len(cells) else ""
+                        
+                        # Извлечение заказчика и номера контракта
+                        customer = ""
+                        contract_num = ""
+                        reestr_num = ""
+                        
+                        try:
+                            # Поиск информации о заказчике
+                            customer_elem = driver.find_element(By.XPATH, "//span[contains(text(), 'Заказчик')]/following-sibling::span[1]")
+                            if customer_elem:
+                                customer = customer_elem.text.strip()
+                        except:
+                            pass
+                        
+                        try:
+                            # Поиск номера контракта
+                            contract_elem = driver.find_element(By.XPATH, "//span[contains(text(), 'Реестровый номер')]/following-sibling::span[1]")
+                            if contract_elem:
+                                reestr_num = contract_elem.text.strip()
+                                # Извлечение только номера
+                                match = re.search(r'\d+', reestr_num)
+                                if match:
+                                    reestr_num = match.group(0)
+                        except:
+                            pass
+                        
+                        contract_num = reestr_num  # Используем реестровый номер как номер контракта
+                        
+                        result = (
+                            name,           # Наименование
+                            country,        # Страна (из КТРУ пока)
+                            okpd2,          # ОКПД2
+                            obj_type,       # Тип объекта
+                            qty,            # Количество
+                            price,          # Цена
+                            sum_rub,        # Сумма
+                            customer,       # Заказчик
+                            contract_num,   # № контракта
+                            reestr_num,     # № реестра
+                            form,           # Лек. форма
+                            dose,           # Дозировка
+                            contract_date,  # Дата контракта
+                            trade_name,     # Торговое наименование
+                            ru,             # Номер РУ
+                        )
+                        results.append(result)
+                
+            except Exception as e:
+                logging.debug(f"  Ошибка обработки таблицы {table_num}: {e}")
+                continue
+        
+        return results
+    
+    except Exception as e:
+        logging.error(f"Ошибка парсинга страницы: {e}")
+        return []
+
+
+def expand_medical_details_static(driver, search_text):
+    """Принудительно раскрывает все блоки с помощью JavaScript"""
+    try:
+        logging.info(f"  === Раскрытие блоков для '{search_text}' ===")
+        
+        expanded_count = 0
+        
+        # Способ 1: Кликаем по всем toggle-элементам
+        toggle_selectors = [
+            "button[class*='toggle']",
+            "[class*='expand']",
+            "[class*='collapse']",
+            ".purchase-object__header",
+            ".lot-info__toggle",
+            "[aria-expanded='false']",
+        ]
+        
+        for selector in toggle_selectors:
+            try:
+                elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                for el in elements:
+                    try:
+                        aria_expanded = el.get_attribute("aria-expanded")
+                        if aria_expanded == "true":
+                            continue
+                        
+                        driver.execute_script("""
+                            arguments[0].scrollIntoView({behavior: 'auto', block: 'center'});
+                            arguments[0].click();
+                        """, el)
+                        
+                        expanded_count += 1
+                    except:
+                        continue
+            except:
+                continue
+        
+        # Способ 2: Принудительно показываем скрытые элементы
+        try:
+            driver.execute_script("""
+                var hiddenElements = document.querySelectorAll('[style*="display: none"], [style*="visibility: hidden"]');
+                hiddenElements.forEach(function(el) {
+                    el.style.display = 'block';
+                    el.style.visibility = 'visible';
+                    el.style.opacity = '1';
+                });
+                
+                var collapsedSections = document.querySelectorAll('.collapse, [class*="collapse"]');
+                collapsedSections.forEach(function(el) {
+                    el.classList.remove('collapse');
+                    el.classList.add('show');
+                    el.style.display = 'block';
+                });
+                
+                var expandableElements = document.querySelectorAll('[aria-expanded]');
+                expandableElements.forEach(function(el) {
+                    el.setAttribute('aria-expanded', 'true');
+                });
+            """)
+            logging.info("    Принудительно показаны скрытые элементы")
+        except Exception as e:
+            logging.debug(f"    Ошибка при показе: {e}")
+        
+        # Ждем появления таблиц
+        try:
+            WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "table"))
+            )
+        except:
+            pass
+        
+        time.sleep(2)
+        logging.info(f"  === Обработано блоков: {expanded_count} ===")
+        
+    except Exception as e:
+        logging.error(f"  ⚠ Ошибка раскрытия: {e}")
 
 
 EXTRACT_SCRIPT = r"""
