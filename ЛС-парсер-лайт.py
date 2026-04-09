@@ -325,26 +325,30 @@ class ZakupkiParserApp(QMainWindow):
         self.progress_bar = QProgressBar()
         self.progress_bar.setValue(0)
 
-        # Фильтр результатов
+        # Фильтр результатов по МНН (ГРЛС)
+        filter_mnn_layout = QHBoxLayout()
+        self.filter_mnn_label = QLabel('Фильтр по МНН:')
         self.filter_input = QLineEdit()
         self.filter_input.textChanged.connect(self.filter_results)
-        self.filter_input.setPlaceholderText('Фильтр результатов...')
+        self.filter_input.setPlaceholderText('Введите наименование МНН для фильтрации...')
+        filter_mnn_layout.addWidget(self.filter_mnn_label)
+        filter_mnn_layout.addWidget(self.filter_input, 1)
 
         # Таблица результатов
         self.results_table = QTableWidget()
-        self.results_table.setColumnCount(16)
+        self.results_table.setColumnCount(17)
         self.results_table.setHorizontalHeaderLabels([
             "Наименование", "Страна", "КТРУ/ОКПД2", "Тип", "Количество", 
             "Цена", "Сумма", "Заказчик", "№ контракта", "№ реестра", 
             "Лек. форма", "Дозировка", "Дата контракта", "Торговое наименование", 
-            "Номер РУ", "Ссылка"
+            "Номер РУ", "МНН (ГРЛС)", "Ссылка"
         ])
         self.results_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self.results_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.results_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.results_table.itemDoubleClicked.connect(self.show_detail_dialog)
 
-        widths = [250, 100, 120, 80, 100, 100, 120, 200, 120, 120, 120, 100, 100, 150, 120, 100]
+        widths = [250, 100, 120, 80, 100, 100, 120, 200, 120, 120, 120, 100, 100, 150, 120, 150, 100]
         for i, w in enumerate(widths):
             self.results_table.setColumnWidth(i, w)
 
@@ -365,7 +369,7 @@ class ZakupkiParserApp(QMainWindow):
         main_layout.addLayout(filter_layout)
         main_layout.addLayout(button_layout)
         main_layout.addWidget(self.progress_bar)
-        main_layout.addWidget(self.filter_input)
+        main_layout.addLayout(filter_mnn_layout)
         main_layout.addWidget(self.results_table)
         main_layout.addLayout(self.stats_layout)
 
@@ -607,7 +611,7 @@ class ZakupkiParserApp(QMainWindow):
                                     "Не указано", "Не указано", "Не указано",
                                     "Не указано", "Не указано", "Не указано",
                                     medical_form, dosage, contract_date,
-                                    trade_name, reg_number
+                                    trade_name, reg_number, search_text
                                 ))
                                 
                                 logging.info(f"    ТН={trade_name}, РУ={reg_number}, Форма={medical_form}, Доза={dosage}")
@@ -708,7 +712,7 @@ class ZakupkiParserApp(QMainWindow):
                             quantity_unit, unit_price, total_price_vat,
                             customer, contract_number, reestr_number,
                             medical_form, dosage, contract_date,
-                            "Не указано", "Не указано"
+                            "Не указано", "Не указано", search_text
                         ))
                         
                 except Exception as e:
@@ -782,24 +786,28 @@ class ZakupkiParserApp(QMainWindow):
         for row_data in self.filtered_results:
             row_position = self.results_table.rowCount()
             self.results_table.insertRow(row_position)
-            for i in range(min(15, len(row_data))):
+            for i in range(min(16, len(row_data))):
                 item = QTableWidgetItem(str(row_data[i]) if i < len(row_data) else "")
                 item.setFlags(item.flags() ^ Qt.ItemIsEditable)
                 self.results_table.setItem(row_position, i, item)
 
-            link = row_data[-1] if len(row_data) > 15 else ""
+            link = row_data[-1] if len(row_data) > 16 else ""
             link_item = QTableWidgetItem("Открыть")
             link_item.setData(Qt.UserRole, link)
             link_item.setFlags(link_item.flags() ^ Qt.ItemIsEditable)
-            self.results_table.setItem(row_position, 15, link_item)
+            self.results_table.setItem(row_position, 16, link_item)
             self.results_table.setRowHeight(row_position, 60)
 
     def filter_results(self):
         filter_text = self.filter_input.text().lower()
-        self.filtered_results = [
-            result for result in self.all_results
-            if any(filter_text in str(field).lower() for field in result)
-        ]
+        # Если фильтр содержит текст, фильтруем по колонке "МНН (ГРЛС)" (индекс 15)
+        if filter_text.strip():
+            self.filtered_results = [
+                result for result in self.all_results
+                if filter_text.lower() in str(result[15]).lower()  # Индекс 15 - это "МНН (ГРЛС)"
+            ]
+        else:
+            self.filtered_results = self.all_results.copy()
         self.display_results()
         self.update_stats()
 
@@ -848,7 +856,7 @@ class ZakupkiParserApp(QMainWindow):
             "Наименование", "Страна", "КТРУ/ОКПД2", "Тип", "Количество",
             "Цена", "Сумма", "Заказчик", "№ контракта", "№ реестра",
             "Лек. форма", "Дозировка", "Дата контракта", "Торговое наименование",
-            "Номер РУ", "Ссылка"
+            "Номер РУ", "МНН (ГРЛС)", "Ссылка"
         ])
 
         from openpyxl.styles import Alignment, Font
@@ -896,7 +904,8 @@ class ZakupkiParserApp(QMainWindow):
             ("№ контракта", row_data[8]), ("№ реестра", row_data[9]),
             ("Лек. форма", row_data[10]), ("Дозировка", row_data[11]),
             ("Дата контракта", row_data[12]), ("Торговое наименование", row_data[13]),
-            ("Номер РУ", row_data[14]), ("Ссылка", row_data[15] if len(row_data) > 15 else "")
+            ("Номер РУ", row_data[14]), ("МНН (ГРЛС)", row_data[15]),
+            ("Ссылка", row_data[16] if len(row_data) > 16 else "")
         ]
 
         for i, (label, value) in enumerate(fields):
