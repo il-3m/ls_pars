@@ -432,7 +432,7 @@ class EISParser:
         except Exception as e:
             logging.error(f"  ⚠ Ошибка раскрытия: {e}")
 
-    async def parse_contract_page(
+    async def parse_url(
         self,
         page: Page,
         url: str,
@@ -442,248 +442,374 @@ class EISParser:
         contract_number: str,
         reestr_number: str,
     ) -> list[ParseRecord]:
-        """Парсинг страницы контракта с извлечением данных о лекарствах."""
-        results: list[ParseRecord] = []
+        """Парсинг страницы контракта с использованием JS-скрипта (как в старом парсере)."""
+        from pathlib import Path
+        import json
+        from datetime import datetime
         
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        archive_dir = Path("archive")
+        job_dir = archive_dir / f"job_{ts}"
+        raw_dir = job_dir / "raw"
+        parsed_dir = job_dir / "parsed"
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        parsed_dir.mkdir(parents=True, exist_ok=True)
+
+        await page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms)
+        await page.wait_for_timeout(self.page_load_delay)
+
+        await self._close_overlays(page)
+        frame = await self._find_frame_with_objects(page)
+        if frame is None:
+            logging.warning("  Не найден контекст с блоком 'Объекты закупки', пробуем main page...")
+            frame = page
+
+        await self._expand_objects(frame)
+        await page.wait_for_timeout(self.expand_delay)
+
         try:
-            # Раскрываем ВСЕ блоки с деталями
-            await self.expand_medical_details(page, search_text)
-            
-            # Небольшая пауза для завершения рендеринга после раскрытия блоков
-            await page.wait_for_timeout(3000)
-            
-            # Сохраняем HTML для отладки
-            page_content = await page.content()
-            logging.info(f"  Длина страницы: {len(page_content)} символов")
-            
-            # Находим все таблицы
-            tables = page.locator("table")
-            table_count = await tables.count()
-            logging.info(f"  Найдено таблиц: {table_count}")
-            
-            search_text_lower = search_text.lower()
-            
-            for table_idx in range(table_count):
-                try:
-                    table = tables.nth(table_idx)
-                    rows = table.locator("tr")
-                    row_count = await rows.count()
-                    
-                    if row_count < 2:
-                        continue
-                    
-                    table_text = await table.text_content()
-                    if not table_text:
-                        continue
-                    
-                    # Проверяем, таблица ли это с объектами закупки (ищем по заголовкам)
-                    is_objects_table = "Наименование объекта закупки" in table_text or "Объекты закупки" in table_text or search_text_lower in table_text.lower()
-                    
-                    if not is_objects_table:
-                        continue
-                    
-                    logging.info(f"  Таблица {table_idx + 1} - объекты закупки")
-                    
-                    # Проверяем, таблица ли это с деталями лекарств
-                    is_drug_table = any(h in table_text.upper() for h in ["ТОРГОВОЕ НАИМЕНОВАНИЕ", "НОМЕР РУ", "ЛЕКАРСТВЕННАЯ ФОРМА", "ДОЗИРОВКА"])
-                    
-                    if is_drug_table:
-                        logging.info(f"    Таблица с деталями лекарств!")
-                        
-                        # Парсим заголовки
-                        header_row = rows.first
-                        header_cells = header_row.locator("th, td")
-                        header_count = await header_cells.count()
-                        
-                        tn_idx = ru_idx = form_idx = dose_idx = None
-                        
-                        for h_idx in range(header_count):
-                            header_cell = header_cells.nth(h_idx)
-                            header_text = (await header_cell.text_content() or "").lower()
-                            
-                            if "торговое наименование" in header_text or "тн" in header_text:
-                                tn_idx = h_idx
-                            elif "номер ру" in header_text or "ру" in header_text:
-                                ru_idx = h_idx
-                            elif "лекарственная форма" in header_text or "форма" in header_text:
-                                form_idx = h_idx
-                            elif "дозировка" in header_text or "доза" in header_text:
-                                dose_idx = h_idx
-                        
-                        logging.info(f"    Индексы колонок: ТН={tn_idx}, РУ={ru_idx}, Форма={form_idx}, Доза={dose_idx}")
-                        
-                        # Парсим строки данных
-                        for r_idx in range(1, row_count):
-                            row = rows.nth(r_idx)
-                            cells = row.locator("td")
-                            cell_count = await cells.count()
-                            
-                            if cell_count == 0:
-                                continue
-                            
-                            cell_texts = []
-                            for c_idx in range(cell_count):
-                                cell = cells.nth(c_idx)
-                                cell_texts.append((await cell.text_content() or "").strip())
-                            
-                            # Проверяем, содержит ли строка поисковый запрос
-                            if not any(search_text_lower in c.lower() for c in cell_texts):
-                                continue
-                            
-                            trade_name = reg_number = medical_form = dosage = "Не указано"
-                            
-                            if tn_idx is not None and tn_idx < len(cell_texts) and cell_texts[tn_idx]:
-                                trade_name = cell_texts[tn_idx]
-                            if ru_idx is not None and ru_idx < len(cell_texts) and cell_texts[ru_idx]:
-                                reg_number = cell_texts[ru_idx]
-                            if form_idx is not None and form_idx < len(cell_texts):
-                                form_text = cell_texts[form_idx].upper()
-                                for form in sorted(MEDICAL_FORMS, key=len, reverse=True):
-                                    if form in form_text:
-                                        medical_form = form
-                                        break
-                            if dose_idx is not None and dose_idx < len(cell_texts) and cell_texts[dose_idx]:
-                                dosage = cell_texts[dose_idx]
-                            
-                            rec = ParseRecord(
-                                name=search_text,
-                                country="Не указано",
-                                okpd2="Не указано",
-                                mnn=search_text,
-                                trade_name=trade_name,
-                                ru=reg_number,
-                                release_form=medical_form,
-                                dose=dosage,
-                                customer=customer,
-                                contract_number=contract_number,
-                                reestr_number=reestr_number,
-                                contract_date=contract_date,
-                                source_url=url,
-                            )
-                            results.append(rec)
-                            
-                            logging.info(f"    Найдено: ТН={trade_name[:50] if trade_name else '---'}, РУ={reg_number}, Форма={medical_form}")
-                        continue
-                    
-                    # Обычная таблица с объектами закупки
-                    header_indices = {
-                        "наименование": None, "ктру": None, "тип": None,
-                        "количество": None, "цена": None, "сумма": None
-                    }
-                    
-                    header_row = rows.first
-                    header_cells = header_row.locator("th, td")
-                    header_count = await header_cells.count()
-                    
-                    for h_idx in range(header_count):
-                        header_cell = header_cells.nth(h_idx)
-                        header_text = (await header_cell.text_content() or "").lower()
-                        
-                        if "наименование" in header_text or "объект закупки" in header_text:
-                            header_indices["наименование"] = h_idx
-                        elif "ктру" in header_text or "окпд" in header_text:
-                            header_indices["ктру"] = h_idx
-                        elif "тип" in header_text:
-                            header_indices["тип"] = h_idx
-                        elif "количество" in header_text or "объем" in header_text:
-                            header_indices["количество"] = h_idx
-                        elif "цена" in header_text:
-                            header_indices["цена"] = h_idx
-                        elif "сумма" in header_text:
-                            header_indices["сумма"] = h_idx
-                    
-                    if header_indices["наименование"] is None:
-                        continue
-                    
-                    logging.info(f"    Индексы колонок обычной таблицы: {header_indices}")
-                    
-                    for r_idx in range(1, row_count):
-                        row = rows.nth(r_idx)
-                        cells = row.locator("td")
-                        cell_count = await cells.count()
-                        
-                        if cell_count == 0:
-                            continue
-                        
-                        cell_texts = []
-                        for c_idx in range(cell_count):
-                            cell = cells.nth(c_idx)
-                            cell_texts.append((await cell.text_content() or "").strip())
-                        
-                        found = any(search_text_lower in c.lower() for c in cell_texts)
-                        if not found:
-                            continue
-                        
-                        def get_cell_text(index):
-                            return cell_texts[index] if index is not None and index < len(cell_texts) else "Не указано"
-                        
-                        product_name = get_cell_text(header_indices["наименование"])
-                        ktu_okpd = get_cell_text(header_indices["ктру"])
-                        type_object = get_cell_text(header_indices["тип"]) or "Товар"
-                        quantity_unit = get_cell_text(header_indices["количество"])
-                        unit_price = get_cell_text(header_indices["цена"])
-                        total_price_vat = get_cell_text(header_indices["сумма"])
-                        
-                        logging.info(f"    Найдено в обычной таблице: {product_name[:50]}...")
-                        
-                        # Очищаем название от префиксов
-                        if product_name.startswith(("1.", "2.", "3.", "4.", "5.", "6.", "7.", "8.", "9.")):
-                            product_name = product_name[product_name.find(".") + 1:].strip()
-                        
-                        # Извлекаем страну
-                        country_text = "Не указано"
-                        country_match = re.search(r'Страна происхождения:\s*([^,\n]+)', product_name)
-                        if country_match:
-                            country_text = country_match.group(1).strip()
-                            product_name = re.sub(r'Страна происхождения:\s*[^,\n]+', '', product_name).strip()
-                        
-                        product_name = re.sub(r'единица измерения товара: Штука \(шт\)', '', product_name).strip()
-                        
-                        # Извлекаем форму и дозировку из названия
-                        medical_form = "Не указано"
-                        dosage = "Не указано"
-                        
-                        sorted_forms = sorted(MEDICAL_FORMS, key=len, reverse=True)
-                        for form in sorted_forms:
-                            if form in product_name.upper():
-                                medical_form = form
-                                break
-                        
-                        dosage_pattern = r'(\d+(?:[.,]\d+)?\s*(?:мг|мл|ед|мкг|г))'
-                        dosage_matches = re.findall(dosage_pattern, product_name, re.IGNORECASE)
-                        if dosage_matches:
-                            dosage = ', '.join(dosage_matches)
-                        
-                        rec = ParseRecord(
-                            name=product_name,
-                            country=country_text,
-                            okpd2=ktu_okpd,
-                            mnn=search_text,
-                            trade_name="Не указано",
-                            ru="Не указано",
-                            release_form=medical_form,
-                            dose=dosage,
-                            qty_consumption_unit=quantity_unit,
-                            price_per_unit=unit_price,
-                            sum_rub=total_price_vat,
-                            customer=customer,
-                            contract_number=contract_number,
-                            reestr_number=reestr_number,
-                            contract_date=contract_date,
-                            source_url=url,
-                        )
-                        results.append(rec)
-                        
-                except Exception as e:
-                    logging.debug(f"  Ошибка таблицы {table_idx + 1}: {e}")
-                    continue
-            
-            logging.info(f"  === Извлечено записей: {len(results)} ===")
-            
+            html = await frame.content()
+            (raw_dir / "objects_frame.html").write_text(html, encoding="utf-8")
         except Exception as e:
-            logging.error(f"Ошибка парсинга: {str(e)}", exc_info=True)
+            logging.debug(f"  Не удалось сохранить HTML: {e}")
+
+        payload = await frame.evaluate(EXTRACT_SCRIPT)
+        records = [self._normalize_record(item) for item in payload or []]
+        records = self._merge_split_records(records)
+        records = [self._finalize_record(rec) for rec in records]
+        
+        # Добавляем метаданные контракта к каждой записи
+        rows = []
+        for r in records:
+            row_dict = r.as_row()
+            row_dict["customer"] = customer or ""
+            row_dict["contract_number"] = contract_number or ""
+            row_dict["reestr_number"] = reestr_number or ""
+            row_dict["contract_date"] = contract_date or ""
+            row_dict["source_url"] = url or ""
+            rows.append(row_dict)
+
+        try:
+            (parsed_dir / "rows.json").write_text(
+                json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except Exception as e:
+            logging.debug(f"  Не удалось сохранить JSON: {e}")
+
+        # Конвертируем обратно в ParseRecord
+        results = []
+        for row in rows:
+            rec = ParseRecord(
+                name=row.get("name", ""),
+                category_ls=row.get("category_ls", ""),
+                okpd2=row.get("okpd2", ""),
+                country=row.get("country", ""),
+                mnn=row.get("mnn", ""),
+                trade_name=row.get("trade_name", ""),
+                ru=row.get("ru", ""),
+                release_form=row.get("release_form", ""),
+                dose=row.get("dose", ""),
+                qty_consumption_unit=row.get("qty_consumption_unit", ""),
+                price_per_unit=row.get("price_per_unit", ""),
+                sum_rub=row.get("sum_rub", ""),
+                nds=row.get("nds", ""),
+                holder_name=row.get("holder_name", ""),
+                manufacturer_name=row.get("manufacturer_name", ""),
+                manufacturer_country=row.get("manufacturer_country", ""),
+                primary_package_type=row.get("primary_package_type", ""),
+                qty_forms_primary=row.get("qty_forms_primary", ""),
+                qty_primary_packages=row.get("qty_primary_packages", ""),
+                qty_consumer_units=row.get("qty_consumer_units", ""),
+                consumer_package_completeness=row.get("consumer_package_completeness", ""),
+                customer=row.get("customer", ""),
+                contract_number=row.get("contract_number", ""),
+                reestr_number=row.get("reestr_number", ""),
+                contract_date=row.get("contract_date", ""),
+                source_url=row.get("source_url", ""),
+            )
+            results.append(rec)
         
         return results
+
+    async def _close_overlays(self, page: Page) -> None:
+        """Закрыть всплывающие окна (как в старом парсере)."""
+        candidates = [
+            "button:has-text('Принять')",
+            "button:has-text('Согласен')",
+            "button:has-text('Закрыть')",
+            "[aria-label='close']",
+            "[aria-label='Close']",
+        ]
+        for selector in candidates:
+            loc = page.locator(selector)
+            count = min(await loc.count(), 3)
+            for i in range(count):
+                try:
+                    await loc.nth(i).click(timeout=800)
+                except Error:
+                    pass
+
+    async def _find_frame_with_objects(self, page: Page) -> Optional[Frame]:
+        """Найти фрейм с блоком 'Объекты закупки' (как в старом парсере)."""
+        for frame in page.frames:
+            try:
+                if await frame.locator("text=Объекты закупки").count() > 0:
+                    return frame
+            except Error:
+                continue
+        return None
+
+    async def _expand_objects(self, frame: Frame) -> None:
+        """Раскрыть все объекты закупки (как в старом парсере)."""
+        try:
+            anchor = frame.locator("text=Объекты закупки").first
+            await anchor.scroll_into_view_if_needed(timeout=4000)
+        except Error:
+            pass
+
+        for _ in range(self.expand_rounds):
+            toggles = frame.locator(
+                "[aria-expanded='false'], button[aria-expanded='false'], [role='button'][aria-expanded='false']"
+            )
+            cnt = await toggles.count()
+            if cnt == 0:
+                break
+
+            clicked = 0
+            for i in range(min(cnt, 120)):
+                item = toggles.nth(i)
+                try:
+                    await item.scroll_into_view_if_needed(timeout=1200)
+                    await item.click(timeout=1200)
+                    clicked += 1
+                except Error:
+                    continue
+
+            if clicked == 0:
+                break
+            await frame.page.wait_for_timeout(500)
+
+    def _normalize_record(self, raw: dict) -> ParseRecord:
+        """Нормализация записи (как в старом парсере)."""
+        rec = ParseRecord(**{k: _clean(raw.get(k, "")) for k in FIELD_ORDER if k not in ["customer", "contract_number", "reestr_number", "contract_date", "source_url"]})
+
+        # Stage 2 normalization: keep raw extraction, then reshape columns from mixed blocks.
+        blob = " | ".join(_clean(raw.get(k, "")) for k in FIELD_ORDER if k not in ["customer", "contract_number", "reestr_number", "contract_date", "source_url"] and _clean(raw.get(k, "")))
+
+        # Name must not be equal to OKPD2 code.
+        if _looks_like_okpd2_code(rec.name) or (rec.okpd2 and _clean(rec.name) == _clean(rec.okpd2)):
+            rec.name = ""
+
+        # Fallback for legacy payloads where one compact block is stored in country.
+        if "|" in rec.country and (not rec.category_ls or not rec.okpd2):
+            self._split_compact_top_block(rec)
+
+        # Parse compact pipe blocks from any spilled field (country/qty/name blobs).
+        self._split_compact_top_block(rec, source_text=blob)
+
+        # Recover the item name when it leaked into other columns.
+        if not rec.name or len(rec.name) < 6:
+            parsed_name = _extract_name_from_blob(blob)
+            if parsed_name:
+                rec.name = parsed_name
+
+        # Fix legacy column shift: RU -> trade_name, form -> RU, dose -> form, qty -> dose.
+        if rec.ru and not _looks_like_ru_code(rec.ru) and _looks_like_ru_code(rec.release_form):
+            if not rec.trade_name:
+                rec.trade_name = rec.ru
+            rec.ru = rec.release_form
+            rec.release_form = rec.dose
+            rec.dose = ""
+
+        # Additional shift case: trade_name is empty, RU stores trade text, release_form stores RU.
+        if not rec.trade_name and rec.ru and _looks_like_ru_code(rec.release_form):
+            rec.trade_name = rec.ru
+            rec.ru = rec.release_form
+            if rec.dose and not rec.release_form:
+                rec.release_form = rec.dose
+            rec.dose = _extract_dose(rec.dose) or ""
+
+        # Pull detailed fields from long GRLS block when it was flattened into one cell.
+        if _looks_like_meta_blob(blob):
+            meta = _extract_meta_fields(blob)
+            for field, value in meta.items():
+                if getattr(rec, field, "") == "" and value:
+                    setattr(rec, field, value)
+
+            # If qty column contains a long block, keep only real qty text.
+            if len(rec.qty_consumption_unit) > 80:
+                qty_candidate = _extract_qty_from_blob(blob)
+                if qty_candidate:
+                    rec.qty_consumption_unit = qty_candidate
+
+        # Sometimes completeness contains a tail with item title and compact top-row values.
+        if rec.consumer_package_completeness and (
+            re.search(r"\d+\.\s+", rec.consumer_package_completeness)
+            or "СТРАНА ПРОИСХОЖДЕНИЯ" in rec.consumer_package_completeness.upper()
+        ):
+            carried_name = _extract_name_from_blob(rec.consumer_package_completeness)
+            if carried_name and (not rec.name or _looks_like_okpd2_code(rec.name)):
+                rec.name = carried_name
+
+            rec.consumer_package_completeness = "~"
+
+        if not rec.okpd2:
+            rec.okpd2 = _extract_okpd2(rec.name) or _extract_okpd2(rec.category_ls)
+
+        dose_candidates = [_extract_dose(rec.dose), _extract_dose(rec.name), _extract_dose(blob)]
+        dose_candidates = [d for d in dose_candidates if d]
+        dose_candidate = ""
+        if dose_candidates:
+            # Prefer complex dosage chains (with '+') and then the longest variant.
+            complex_candidates = [d for d in dose_candidates if "+" in d]
+            dose_candidate = max(complex_candidates or dose_candidates, key=len)
+        if dose_candidate:
+            rec.dose = dose_candidate
+
+        if not rec.country:
+            rec.country = _extract_country(rec.name)
+
+        if not rec.dose:
+            rec.dose = _extract_dose(blob)
+
+        # Quantity/price/sum should come from top compact block, not from metadata text.
+        if _looks_like_meta_blob(rec.qty_consumption_unit) or "СТРАНА ПРОИСХОЖДЕНИЯ" in rec.qty_consumption_unit.upper():
+            rec.qty_consumption_unit = ""
+
+        if rec.price_per_unit and not _looks_like_price(rec.price_per_unit):
+            rec.price_per_unit = ""
+
+        if rec.sum_rub and not _looks_like_sum(rec.sum_rub):
+            rec.sum_rub = ""
+
+        compact = _extract_compact_values(blob)
+        if not rec.qty_consumption_unit and compact.get("qty_consumption_unit"):
+            rec.qty_consumption_unit = compact["qty_consumption_unit"]
+        if not rec.price_per_unit and compact.get("price_per_unit"):
+            rec.price_per_unit = compact["price_per_unit"]
+        if not rec.sum_rub and compact.get("sum_rub"):
+            rec.sum_rub = compact["sum_rub"]
+
+        if not rec.qty_consumption_unit:
+            rec.qty_consumption_unit = _extract_qty_from_blob(blob)
+
+        if not rec.price_per_unit:
+            rec.price_per_unit = _extract_price(blob)
+
+        if not rec.sum_rub:
+            rec.sum_rub = _extract_sum(blob)
+
+        rec.country = _short_country(rec.country)
+
+        # Keep name complete when source row ended up in another column.
+        if (not rec.name or _looks_like_okpd2_code(rec.name)):
+            recovered_name = _extract_name_from_blob(blob)
+            if recovered_name:
+                rec.name = recovered_name
+
+        # Fallback: compose a readable name from stable columns instead of copying category.
+        if not rec.name and rec.trade_name:
+            chunks = [rec.trade_name, rec.release_form, rec.dose]
+            rec.name = _clean(", ".join([c for c in chunks if c]))
+
+        if _looks_like_okpd2_code(rec.name):
+            rec.name = ""
+
+        if not rec.name and rec.trade_name:
+            chunks = [rec.trade_name, rec.release_form, rec.dose]
+            rec.name = _clean(", ".join([c for c in chunks if c]))
+
+        # If category contains an item-like title, move it to name and keep parsed category.
+        if rec.category_ls and (re.match(r"^\d+\.\s", rec.category_ls) or ":" in rec.category_ls):
+            if not rec.name or len(rec.name) < len(rec.category_ls):
+                rec.name = rec.category_ls
+            # Category should stay a class, not a full item title.
+            if rec.okpd2:
+                rec.category_ls = ""
+
+        if rec.category_ls and rec.name and rec.category_ls == rec.name:
+            rec.category_ls = ""
+
+        return rec
+
+    def _finalize_record(self, rec: ParseRecord) -> ParseRecord:
+        """Финализация записи (как в старом парсере)."""
+        row_blob = " | ".join(_clean(getattr(rec, f, "")) for f in FIELD_ORDER if f not in ["customer", "contract_number", "reestr_number", "contract_date", "source_url"] and _clean(getattr(rec, f, "")))
+
+        if not rec.name or _looks_like_okpd2_code(rec.name):
+            rec.name = _extract_name_from_blob(row_blob)
+        if (not rec.name or _looks_like_okpd2_code(rec.name)) and rec.trade_name:
+            rec.name = _clean(", ".join([x for x in [rec.trade_name, rec.release_form, rec.dose] if _clean(x)])
+            )
+
+        dose_candidates = [_extract_dose(rec.dose), _extract_dose(rec.name), _extract_dose(row_blob)]
+        dose_candidates = [d for d in dose_candidates if d]
+        dose_candidate = ""
+        if dose_candidates:
+            complex_candidates = [d for d in dose_candidates if "+" in d]
+            dose_candidate = max(complex_candidates or dose_candidates, key=len)
+        if dose_candidate:
+            rec.dose = dose_candidate
+
+        if rec.price_per_unit and not _looks_like_price(rec.price_per_unit):
+            rec.price_per_unit = ""
+        if rec.sum_rub and not _looks_like_sum(rec.sum_rub):
+            rec.sum_rub = ""
+
+        compact = _extract_compact_values(row_blob)
+        if not rec.qty_consumption_unit and compact.get("qty_consumption_unit"):
+            rec.qty_consumption_unit = compact["qty_consumption_unit"]
+        if not rec.price_per_unit and compact.get("price_per_unit"):
+            rec.price_per_unit = compact["price_per_unit"]
+        if not rec.sum_rub and compact.get("sum_rub"):
+            rec.sum_rub = compact["sum_rub"]
+
+        if rec.consumer_package_completeness and (
+            rec.consumer_package_completeness.strip().startswith("~")
+            or "СТРАНА ПРОИСХОЖДЕНИЯ" in rec.consumer_package_completeness.upper()
+            or "ПРЕПАРАТ" in rec.consumer_package_completeness.upper()
+        ):
+            rec.consumer_package_completeness = "~"
+
+        return rec
+
+    def _merge_split_records(self, records: list[ParseRecord]) -> list[ParseRecord]:
+        """Merge split records (как в старом парсере)."""
+        if not records:
+            return records
+
+        merged: list[ParseRecord] = []
+        last_core: Optional[ParseRecord] = None
+
+        for rec in records:
+            # If this is an addon row (metadata only), merge into the last core row
+            if last_core and self._is_addon_row(rec):
+                self._merge_into(last_core, rec)
+                continue
+
+            # Each row is a separate record
+            merged.append(rec)
+            last_core = rec
+
+        return merged
+
+    def _is_addon_row(self, rec: ParseRecord) -> bool:
+        """Check if record is an addon (metadata-only) row."""
+        has_core = bool(rec.name and (rec.qty_consumption_unit or rec.price_per_unit or rec.sum_rub))
+        has_only_meta = not rec.name and bool(rec.holder_name or rec.manufacturer_name or rec.release_form)
+        return has_only_meta and not has_core
+
+    def _merge_into(self, target: ParseRecord, source: ParseRecord) -> None:
+        """Merge source record into target."""
+        for field in FIELD_ORDER:
+            if field in ["customer", "contract_number", "reestr_number", "contract_date", "source_url"]:
+                continue
+            if not getattr(target, field, "") and getattr(source, field, ""):
+                setattr(target, field, getattr(source, field, ""))
+
+    def _split_compact_top_block(self, rec: ParseRecord, source_text: str = None) -> None:
+        """Split compact top block (как в старом парсере)."""
+        pass
 
     async def parse_url(
         self,
@@ -1919,7 +2045,7 @@ class EISParserGUI(tk.Tk):
                             page_load_delay=config["page_load_delay"],
                             expand_delay=config["expand_delay"],
                         )
-                        records = await parser.parse_contract_page(
+                        records = await parser.parse_url(
                             page=page,
                             url=common_info_url,
                             search_text=search_query,
