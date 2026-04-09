@@ -345,6 +345,7 @@ class UnifiedParserApp(QMainWindow):
         self.init_ui()
         self.thread = None
         self.all_rows = []
+        self.filter_before_search = ""  # Фильтр МНН, установленный ДО поиска
 
     def init_ui(self):
         """Инициализация интерфейса"""
@@ -539,9 +540,18 @@ class UnifiedParserApp(QMainWindow):
         filter_result_label = QLabel("Фильтр по МНН:")
         self.filter_result_input = QLineEdit()
         self.filter_result_input.setPlaceholderText('Введите текст для фильтрации')
-        self.filter_result_input.textChanged.connect(self.filter_table)
+        
+        # Кнопка "Фильтровать"
+        filter_button_layout = QHBoxLayout()
+        filter_button_layout.setSpacing(6)
+        self.filter_button = QPushButton('ФИЛЬТРОВАТЬ')
+        self.filter_button.setMinimumHeight(30)
+        self.filter_button.clicked.connect(self.apply_filter)
+        filter_button_layout.addWidget(self.filter_result_input, 1)
+        filter_button_layout.addWidget(self.filter_button)
+        
         main_tab_layout.addWidget(filter_result_label)
-        main_tab_layout.addWidget(self.filter_result_input)
+        main_tab_layout.addLayout(filter_button_layout)
 
         main_tab_layout.addStretch()
         main_tab.setLayout(main_tab_layout)
@@ -621,9 +631,13 @@ class UnifiedParserApp(QMainWindow):
         self.open_csv_button.clicked.connect(self.open_csv)
         self.open_folder_button = QPushButton('Папка')
         self.open_folder_button.clicked.connect(self.open_folder)
+        self.reset_button = QPushButton('СБРОС')
+        self.reset_button.setStyleSheet("background-color: #ffcccc;")
+        self.reset_button.clicked.connect(self.reset_data)
         
         actions_layout.addWidget(self.open_csv_button)
         actions_layout.addWidget(self.open_folder_button)
+        actions_layout.addWidget(self.reset_button)
         left_layout.addLayout(actions_layout)
 
         left_layout.addStretch()
@@ -741,14 +755,14 @@ class UnifiedParserApp(QMainWindow):
         elif checkbox_type == 'rosunimed' and self.rosunimed_checkbox.isChecked():
             self.region_checkbox.setChecked(False)
 
-    def filter_table(self, filter_text):
-        """Фильтрация таблицы по тексту в колонке МНН (ГРЛС)"""
-        filter_text = filter_text.strip().lower()
+    def apply_filter(self):
+        """Фильтрация таблицы по тексту в колонке МНН (ГРЛС) по кнопке"""
+        filter_text = self.filter_result_input.text().strip().lower()
         
-        # Находим индекс колонки МНН (ГРЛС)
+        # Находим индекс колонки МНН (ГРЛС) - в FIELD_ORDER это 'mnn'
         mnn_column_index = -1
         for i, field_name in enumerate(FIELD_ORDER):
-            if field_name == 'mnn_grls':
+            if field_name == 'mnn':
                 mnn_column_index = i
                 break
         
@@ -764,6 +778,65 @@ class UnifiedParserApp(QMainWindow):
                 self.results_table.setRowHidden(row, False)
             else:
                 self.results_table.setRowHidden(row, True)
+        
+        # Обновляем filter_before_search для последующего добавления строк
+        self.filter_before_search = self.filter_result_input.text().strip()
+
+    def filter_table(self, filter_text):
+        """Фильтрация таблицы по тексту в колонке МНН (ГРЛС)"""
+        filter_text = filter_text.strip().lower()
+        
+        # Находим индекс колонки МНН (ГРЛС) - в FIELD_ORDER это 'mnn'
+        mnn_column_index = -1
+        for i, field_name in enumerate(FIELD_ORDER):
+            if field_name == 'mnn':
+                mnn_column_index = i
+                break
+        
+        if mnn_column_index == -1:
+            return
+        
+        # Проходим по всем строкам и скрываем/показываем
+        for row in range(self.results_table.rowCount()):
+            item = self.results_table.item(row, mnn_column_index)
+            cell_text = item.text().lower() if item else ""
+            
+            if not filter_text or filter_text in cell_text:
+                self.results_table.setRowHidden(row, False)
+            else:
+                self.results_table.setRowHidden(row, True)
+
+    def reset_data(self):
+        """Сброс всех данных из таблицы с подтверждением"""
+        reply = QMessageBox.question(
+            self,
+            "Подтверждение сброса",
+            "Вы уверены, что хотите сбросить полученные данные?\n\nВсе данные из таблицы будут удалены.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            # Очищаем таблицу
+            self.results_table.setRowCount(0)
+            # Очищаем список ссылок
+            self.links_list.clear()
+            # Очищаем лог
+            self.log_text.clear()
+            # Сбрасываем счетчики
+            self.total_links_label.setText("Ссылок найдено: 0")
+            self.total_rows_label.setText("Строк распаршено: 0")
+            # Очищаем прогресс бар
+            self.progress_bar.setValue(0)
+            # Очищаем внутренний список данных
+            self.all_rows = []
+            # Сбрасываем фильтр
+            self.filter_before_search = ""
+            # Очищаем поле фильтра
+            self.filter_result_input.clear()
+            # Обновляем статус
+            self.status_label.setText("Данные сброшены")
+            self.append_log("=== ДАННЫЕ СБРОШЕНЫ ПОЛЬЗОВАТЕЛЕМ ===")
 
     def export_to_excel(self):
         """Выгрузка видимых данных таблицы в Excel"""
@@ -823,6 +896,9 @@ class UnifiedParserApp(QMainWindow):
             QMessageBox.warning(self, "Внимание", "Введите поисковый запрос")
             return
 
+        # Сохраняем значение фильтра МНН ДО поиска
+        self.filter_before_search = self.filter_result_input.text().strip()
+
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
         self.progress_bar.setValue(0)
@@ -832,6 +908,8 @@ class UnifiedParserApp(QMainWindow):
         
         self.append_log("=== ЗАПУСК ПОЛНОГО ЦИКЛА ===")
         self.append_log(f"Поисковый запрос: {search_text}")
+        if self.filter_before_search:
+            self.append_log(f"Фильтр МНН (до поиска): {self.filter_before_search}")
         
         date_from = self.date_from.date().toString("yyyy-MM-dd")
         date_to = self.date_to.date().toString("yyyy-MM-dd")
@@ -901,6 +979,13 @@ class UnifiedParserApp(QMainWindow):
 
     def add_row_to_table(self, row_data: dict):
         """Добавление строки данных в таблицу результатов"""
+        # Если был установлен фильтр (до поиска или после), проверяем соответствие
+        if self.filter_before_search:
+            mnn_value = row_data.get('mnn', '').lower()
+            if self.filter_before_search.lower() not in mnn_value:
+                # Пропускаем строку, не соответствующую фильтру
+                return
+        
         row_position = self.results_table.rowCount()
         self.results_table.insertRow(row_position)
         
