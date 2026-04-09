@@ -759,10 +759,10 @@ class UnifiedParserApp(QMainWindow):
         """Фильтрация таблицы по тексту в колонке МНН (ГРЛС) по кнопке"""
         filter_text = self.filter_result_input.text().strip().lower()
         
-        # Находим индекс колонки МНН (ГРЛС)
+        # Находим индекс колонки МНН (ГРЛС) - в FIELD_ORDER это 'mnn'
         mnn_column_index = -1
         for i, field_name in enumerate(FIELD_ORDER):
-            if field_name == 'mnn_grls':
+            if field_name == 'mnn':
                 mnn_column_index = i
                 break
         
@@ -778,15 +778,18 @@ class UnifiedParserApp(QMainWindow):
                 self.results_table.setRowHidden(row, False)
             else:
                 self.results_table.setRowHidden(row, True)
+        
+        # Обновляем filter_before_search для последующего добавления строк
+        self.filter_before_search = self.filter_result_input.text().strip()
 
     def filter_table(self, filter_text):
         """Фильтрация таблицы по тексту в колонке МНН (ГРЛС)"""
         filter_text = filter_text.strip().lower()
         
-        # Находим индекс колонки МНН (ГРЛС)
+        # Находим индекс колонки МНН (ГРЛС) - в FIELD_ORDER это 'mnn'
         mnn_column_index = -1
         for i, field_name in enumerate(FIELD_ORDER):
-            if field_name == 'mnn_grls':
+            if field_name == 'mnn':
                 mnn_column_index = i
                 break
         
@@ -827,6 +830,8 @@ class UnifiedParserApp(QMainWindow):
             self.progress_bar.setValue(0)
             # Очищаем внутренний список данных
             self.all_rows = []
+            # Сбрасываем фильтр
+            self.filter_before_search = ""
             # Очищаем поле фильтра
             self.filter_result_input.clear()
             # Обновляем статус
@@ -974,9 +979,9 @@ class UnifiedParserApp(QMainWindow):
 
     def add_row_to_table(self, row_data: dict):
         """Добавление строки данных в таблицу результатов"""
-        # Если был установлен фильтр ДО поиска, проверяем соответствие
+        # Если был установлен фильтр (до поиска или после), проверяем соответствие
         if self.filter_before_search:
-            mnn_value = row_data.get('mnn_grls', '').lower()
+            mnn_value = row_data.get('mnn', '').lower()
             if self.filter_before_search.lower() not in mnn_value:
                 # Пропускаем строку, не соответствующую фильтру
                 return
