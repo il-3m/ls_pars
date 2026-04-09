@@ -38,6 +38,8 @@ export default function App() {
   const [outXlsx, setOutXlsx] = useState("export/result.xlsx");
   const [traceEnabled, setTraceEnabled] = useState(true);
   const [copyState, setCopyState] = useState<"idle" | "done">("idle");
+  const [showSettings, setShowSettings] = useState(true);
+  const [mnnFilter, setMnnFilter] = useState("");
 
   const runCommand = useMemo(() => {
     const parts = [
@@ -57,14 +59,24 @@ export default function App() {
 
   const filteredRows = useMemo(() => {
     const query = searchWord.trim().toLowerCase();
-    if (!query) {
-      return demoRows;
+    const mnnQuery = mnnFilter.trim().toUpperCase();
+
+    let result = demoRows;
+
+    if (query) {
+      result = result.filter((row) =>
+        Object.values(row).some((value) => value.toLowerCase().includes(query)),
+      );
     }
 
-    return demoRows.filter((row) =>
-      Object.values(row).some((value) => value.toLowerCase().includes(query)),
-    );
-  }, [searchWord]);
+    if (mnnQuery) {
+      result = result.filter((row) =>
+        row.mnn.toUpperCase().includes(mnnQuery),
+      );
+    }
+
+    return result;
+  }, [searchWord, mnnFilter]);
 
   const copyCommand = async () => {
     try {
@@ -73,6 +85,13 @@ export default function App() {
       setTimeout(() => setCopyState("idle"), 1600);
     } catch {
       setCopyState("idle");
+    }
+  };
+
+  const openExcel = () => {
+    const excelPath = outXlsx.trim();
+    if (excelPath) {
+      window.open(excelPath, "_blank");
     }
   };
 
@@ -91,125 +110,160 @@ export default function App() {
           </div>
         </section>
 
-        <section className="mt-8 grid gap-6 border border-slate-800 bg-slate-900/60 p-6 md:grid-cols-[1.45fr_1fr]">
-          <div className="space-y-4 [animation:slideUp_.6s_ease-out]">
-            <label className="block text-sm text-slate-300" htmlFor="url">
+        <section className="mt-6 grid gap-3 border border-slate-800 bg-slate-900/60 p-3 md:grid-cols-[1.45fr_1fr]">
+          {showSettings && (
+          <div className="space-y-1.5 [animation:slideUp_.6s_ease-out]">
+            <label className="block text-[10px] text-slate-300" htmlFor="url">
               Ссылка ЕИС
             </label>
             <input
               id="url"
               value={url}
               onChange={(event) => setUrl(event.target.value)}
-              className="w-full border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-300 transition focus:ring"
+              className="w-full border border-slate-700 bg-slate-950 px-1.5 py-1 text-[10px] outline-none ring-cyan-300 transition focus:ring"
             />
 
-            <label className="block text-sm text-slate-300" htmlFor="search-word">
-              Слово для поиска в результатах
+            <label className="block text-[10px] text-slate-300" htmlFor="search-word">
+              Слово для поиска
             </label>
             <input
               id="search-word"
               value={searchWord}
               onChange={(event) => setSearchWord(event.target.value)}
-              className="w-full border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-300 transition focus:ring"
-              placeholder="например: азитромицин"
+              className="w-full border border-slate-700 bg-slate-950 px-1.5 py-1 text-[10px] outline-none ring-cyan-300 transition focus:ring"
+              placeholder="азитромицин"
             />
 
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-1.5 md:grid-cols-3">
               <div>
-                <label className="block text-sm text-slate-300" htmlFor="archive-dir">
+                <label className="block text-[10px] text-slate-300" htmlFor="archive-dir">
                   Папка архива
                 </label>
                 <input
                   id="archive-dir"
                   value={archiveDir}
                   onChange={(event) => setArchiveDir(event.target.value)}
-                  className="mt-1 w-full border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-300 transition focus:ring"
+                  className="mt-0.5 w-full border border-slate-700 bg-slate-950 px-1.5 py-1 text-[10px] outline-none ring-cyan-300 transition focus:ring"
                 />
               </div>
               <div>
-                <label className="block text-sm text-slate-300" htmlFor="csv">
+                <label className="block text-[10px] text-slate-300" htmlFor="csv">
                   CSV файл
                 </label>
                 <input
                   id="csv"
                   value={outCsv}
                   onChange={(event) => setOutCsv(event.target.value)}
-                  className="mt-1 w-full border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-300 transition focus:ring"
+                  className="mt-0.5 w-full border border-slate-700 bg-slate-950 px-1.5 py-1 text-[10px] outline-none ring-cyan-300 transition focus:ring"
                 />
               </div>
               <div>
-                <label className="block text-sm text-slate-300" htmlFor="xlsx">
+                <label className="block text-[10px] text-slate-300" htmlFor="xlsx">
                   XLSX файл
                 </label>
                 <input
                   id="xlsx"
                   value={outXlsx}
                   onChange={(event) => setOutXlsx(event.target.value)}
-                  className="mt-1 w-full border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-300 transition focus:ring"
+                  className="mt-0.5 w-full border border-slate-700 bg-slate-950 px-1.5 py-1 text-[10px] outline-none ring-cyan-300 transition focus:ring"
                 />
               </div>
             </div>
 
-            <label className="flex items-center gap-2 text-sm text-slate-300">
+            <label className="flex items-center gap-1.5 text-[10px] text-slate-300">
               <input
                 type="checkbox"
                 checked={traceEnabled}
                 onChange={(event) => setTraceEnabled(event.target.checked)}
-                className="accent-cyan-300"
+                className="accent-cyan-300 h-2.5 w-2.5"
               />
-              Сохранять trace для диагностики проблемных ссылок
+              Сохранять trace
             </label>
           </div>
+          )}
 
-          <div className="space-y-3 border border-slate-700 bg-slate-950/70 p-4 text-sm [animation:pulseIn_.8s_ease-out]">
+          <div className="space-y-1.5 border border-slate-700 bg-slate-950/70 p-2 text-[10px] [animation:pulseIn_.8s_ease-out]">
             <p className="text-slate-400">Готовая команда</p>
-            <pre className="overflow-x-auto whitespace-pre-wrap break-all border border-slate-800 bg-slate-950 p-3 text-cyan-200">
+            <pre className="overflow-x-auto whitespace-pre-wrap break-all border border-slate-800 bg-slate-950 p-1.5 text-cyan-200">
               {runCommand}
             </pre>
             <button
               type="button"
               onClick={copyCommand}
-              className="w-full border border-cyan-400 px-3 py-2 text-cyan-200 transition hover:bg-cyan-400/10"
+              className="w-full border border-cyan-400 px-1.5 py-1 text-cyan-200 transition hover:bg-cyan-400/10"
             >
               {copyState === "done" ? "Скопировано" : "Скопировать команду"}
             </button>
-            <p className="text-xs text-slate-400">
+            <p className="text-[9px] text-slate-400">
               Команда запускается в той же папке, где лежит файл <code>eis_parser.py</code>.
             </p>
-            <p className="text-xs text-slate-400">
+            <p className="text-[9px] text-slate-400">
               Слово поиска применяется в интерфейсе как фильтр результата, не как аргумент запуска.
             </p>
           </div>
         </section>
 
-        <section className="mt-8 border border-slate-800 bg-slate-900/60 p-6">
-          <h2 className="text-xl font-medium">Предпросмотр фильтра по слову поиска</h2>
-          <p className="mt-1 text-sm text-slate-300">
-            Сейчас найдено: {filteredRows.length} из {demoRows.length}
-          </p>
+        <section className="mt-6 border border-slate-800 bg-slate-900/60 p-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium">Результаты парсинга</h2>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setShowSettings(!showSettings)}
+                className="border border-slate-600 px-1.5 py-0.5 text-[10px] text-slate-300 transition hover:bg-slate-700/50"
+              >
+                {showSettings ? "Скрыть настройки" : "Показать настройки"}
+              </button>
+              <button
+                type="button"
+                onClick={openExcel}
+                className="border border-green-500 px-1.5 py-0.5 text-[10px] text-green-400 transition hover:bg-green-500/10"
+              >
+                Открыть Excel
+              </button>
+            </div>
+          </div>
+          
+          <div className="mt-2 flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <label className="text-[10px] text-slate-300" htmlFor="mnn-filter">
+                Фильтр по МНН:
+              </label>
+              <input
+                id="mnn-filter"
+                value={mnnFilter}
+                onChange={(event) => setMnnFilter(event.target.value)}
+                className="w-32 border border-slate-700 bg-slate-950 px-1.5 py-0.5 text-[10px] outline-none ring-cyan-300 transition focus:ring"
+                placeholder="введите МНН"
+              />
+            </div>
+            <p className="text-[10px] text-slate-400">
+              Найдено: {filteredRows.length} из {demoRows.length}
+            </p>
+          </div>
 
-          <div className="mt-4 overflow-x-auto text-sm">
+          <div className="mt-2 overflow-x-auto text-[10px]">
             <table className="min-w-full border-collapse table-auto">
               <thead>
                 <tr className="text-left text-slate-400 sticky top-0 bg-slate-900/60">
-                  <th className="border-b border-slate-700 p-2 min-w-[280px]">Наименование</th>
-                  <th className="border-b border-slate-700 p-2 min-w-[150px]">МНН</th>
-                  <th className="border-b border-slate-700 p-2 min-w-[150px]">ТН</th>
-                  <th className="border-b border-slate-700 p-2 min-w-[180px]">РУ</th>
-                  <th className="border-b border-slate-700 p-2 min-w-[200px]">Форма выпуска</th>
-                  <th className="border-b border-slate-700 p-2 min-w-[120px]">Дозировка</th>
-                  <th className="border-b border-slate-700 p-2 min-w-[100px]">Сумма, руб</th>
+                  <th className="border-b border-slate-700 p-1 min-w-[280px]">Наименование</th>
+                  <th className="border-b border-slate-700 p-1 min-w-[150px]">МНН</th>
+                  <th className="border-b border-slate-700 p-1 min-w-[150px]">ТН</th>
+                  <th className="border-b border-slate-700 p-1 min-w-[180px]">РУ</th>
+                  <th className="border-b border-slate-700 p-1 min-w-[200px]">Форма выпуска</th>
+                  <th className="border-b border-slate-700 p-1 min-w-[120px]">Дозировка</th>
+                  <th className="border-b border-slate-700 p-1 min-w-[100px]">Сумма, руб</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredRows.map((row) => (
                   <tr key={row.ru} className="[animation:fadeIn_.45s_ease-out] hover:bg-slate-800/30">
-                    <td className="border-b border-slate-800 p-2 max-w-xs truncate">{row.name}</td>
-                    <td className="border-b border-slate-800 p-2">{row.mnn}</td>
-                    <td className="border-b border-slate-800 p-2">{row.tradeName}</td>
-                    <td className="border-b border-slate-800 p-2 font-mono text-xs break-all">{row.ru}</td>
-                    <td className="border-b border-slate-800 p-2 max-w-xs truncate">{row.dose}</td>
-                    <td className="border-b border-slate-800 p-2 text-right">{row.sum}</td>
+                    <td className="border-b border-slate-800 p-1 max-w-xs truncate">{row.name}</td>
+                    <td className="border-b border-slate-800 p-1">{row.mnn}</td>
+                    <td className="border-b border-slate-800 p-1">{row.tradeName}</td>
+                    <td className="border-b border-slate-800 p-1 font-mono break-all">{row.ru}</td>
+                    <td className="border-b border-slate-800 p-1 max-w-xs truncate">{row.dose}</td>
+                    <td className="border-b border-slate-800 p-1 text-right">{row.sum}</td>
                   </tr>
                 ))}
               </tbody>

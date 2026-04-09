@@ -1,8 +1,1 @@
-```
-# Compiled Python files
-*.pyc
-__pycache__/
-
-# HTML coverage reports
-test_duplicates.html
-```
+(empty)
