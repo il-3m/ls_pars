@@ -65,7 +65,8 @@ from PyQt5.QtWidgets import (
     QHBoxLayout, QTextEdit, QFileDialog, QDialog,
     QGridLayout, QSpacerItem, QSizePolicy,
     QComboBox, QCompleter, QFormLayout, QStatusBar,
-    QListWidget, QListWidgetItem, QSplitter
+    QListWidget, QListWidgetItem, QSplitter, QTableWidget, QTableWidgetItem,
+    QHeaderView, QFrame, QScrollArea
 )
 from PyQt5.QtCore import QDate, Qt, QThread, pyqtSignal, QStringListModel, QUrl
 from PyQt5.QtGui import QColor, QDesktopServices
@@ -99,6 +100,7 @@ class UnifiedParserWorker(QThread):
     update_progress = pyqtSignal(int)
     update_output = pyqtSignal(str)
     link_found = pyqtSignal(str)
+    row_parsed = pyqtSignal(dict)  # отправляет каждую строку данных
     data_parsed = pyqtSignal(int)  # количество строк добавлено
     finished = pyqtSignal(list)
     
@@ -307,6 +309,9 @@ class UnifiedParserWorker(QThread):
                     try:
                         rows = await parser.parse_url(page, url, archive_dir=archive_dir, save_trace=self.trace)
                         self.all_rows.extend(rows)
+                        # Отправляем каждую строку для отображения в таблице
+                        for row in rows:
+                            self.row_parsed.emit(row)
                         self.data_parsed.emit(len(rows))
                         self.update_output.emit(f"  -> добавлено строк: {len(rows)}, всего: {len(self.all_rows)}")
                     except Exception as exc:
@@ -520,17 +525,72 @@ class UnifiedParserApp(QMainWindow):
         self.stats_layout.addWidget(self.total_rows_label)
         self.stats_layout.addStretch()
 
-        # Основной макет
-        main_layout.addLayout(params_group)
-        main_layout.addLayout(filter_layout)
-        main_layout.addLayout(parse_settings_group)
-        main_layout.addLayout(export_group)
-        main_layout.addLayout(button_layout)
-        main_layout.addWidget(self.progress_bar)
-        main_layout.addWidget(splitter)
-        main_layout.addLayout(self.stats_layout)
+        # Кнопка скрыть/раскрыть логи
+        self.toggle_logs_button = QPushButton('▼ Скрыть поисковые и технические запросы')
+        self.toggle_logs_button.clicked.connect(self.toggle_logs_visibility)
+        self.logs_collapsed = False
+        
+        # Таблица результатов
+        self.results_table = QTableWidget()
+        self.results_table.setColumnCount(len(FIELD_ORDER))
+        self.results_table.setHorizontalHeaderLabels([EXPORT_HEADERS_RU[FIELD_ORDER[i]] for i in range(len(FIELD_ORDER))])
+        self.results_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.results_table.horizontalHeader().setStretchLastSection(True)
+        self.results_table.verticalHeader().setVisible(False)
+        self.results_table.setAlternatingRowColors(True)
+        self.results_table.setStyleSheet("""
+            QTableWidget { 
+                font-size: 12px; 
+                border: 1px solid #ccc; 
+                border-radius: 5px; 
+                background-color: white;
+                gridline-color: #ddd;
+            }
+            QTableWidget::item { padding: 4px; }
+            QHeaderView::section { 
+                background-color: #0078d4; 
+                color: white; 
+                padding: 8px; 
+                border: 1px solid #005ea2;
+                font-weight: bold;
+            }
+            QTableWidget::item:nth-child(even) { background-color: #f9f9f9; }
+            QTableWidget::item:nth-child(odd) { background-color: white; }
+        """)
 
-        central_widget.setLayout(main_layout)
+        # Основной макет - верхняя часть с параметрами и логами
+        top_widget = QWidget()
+        top_layout = QVBoxLayout()
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.addLayout(params_group)
+        top_layout.addLayout(filter_layout)
+        top_layout.addLayout(parse_settings_group)
+        top_layout.addLayout(export_group)
+        top_layout.addLayout(button_layout)
+        top_layout.addWidget(self.progress_bar)
+        top_layout.addWidget(splitter)
+        top_layout.addLayout(self.stats_layout)
+        top_layout.addWidget(self.toggle_logs_button)
+        top_widget.setLayout(top_layout)
+        
+        # Нижний контейнер для скрываемых элементов (логи + ссылки)
+        self.logs_scroll = QScrollArea()
+        self.logs_scroll.setWidgetResizable(True)
+        self.logs_scroll.setMaximumHeight(400)
+        logs_content = QWidget()
+        logs_content.setLayout(main_layout)
+        self.logs_scroll.setWidget(logs_content)
+        
+        # Главный вертикальный layout
+        main_vlayout = QVBoxLayout()
+        main_vlayout.setSpacing(10)
+        main_vlayout.setContentsMargins(0, 0, 0, 0)
+        main_vlayout.addWidget(top_widget)
+        main_vlayout.addWidget(self.logs_scroll)  # Скрываемый блок с логами
+        main_vlayout.addWidget(QLabel("Результаты парсинга:"))
+        main_vlayout.addWidget(self.results_table)
+        
+        central_widget.setLayout(main_vlayout)
 
         self.statusBar = QStatusBar()
         self.setStatusBar(self.statusBar)
@@ -618,6 +678,7 @@ class UnifiedParserApp(QMainWindow):
         self.thread.update_progress.connect(self.progress_bar.setValue)
         self.thread.update_output.connect(self.append_log)
         self.thread.link_found.connect(self.on_link_found)
+        self.thread.row_parsed.connect(self.add_row_to_table)
         self.thread.data_parsed.connect(self.on_data_parsed)
         self.thread.finished.connect(self.on_parsing_finished)
         
@@ -633,6 +694,33 @@ class UnifiedParserApp(QMainWindow):
             self.start_button.setEnabled(True)
             self.stop_button.setEnabled(False)
             self.status_label.setText("Остановлено")
+
+    def toggle_logs_visibility(self):
+        """Скрыть/раскрыть панель логов и ссылок"""
+        if self.logs_collapsed:
+            # Раскрыть
+            self.logs_scroll.setVisible(True)
+            self.toggle_logs_button.setText('▼ Скрыть поисковые и технические запросы')
+            self.logs_collapsed = False
+        else:
+            # Скрыть
+            self.logs_scroll.setVisible(False)
+            self.toggle_logs_button.setText('▶ Раскрыть поисковые и технические запросы')
+            self.logs_collapsed = True
+
+    def add_row_to_table(self, row_data: dict):
+        """Добавление строки данных в таблицу результатов"""
+        row_position = self.results_table.rowCount()
+        self.results_table.insertRow(row_position)
+        
+        for col_idx, field_name in enumerate(FIELD_ORDER):
+            value = row_data.get(field_name, "")
+            item = QTableWidgetItem(str(value) if value else "")
+            item.setFlags(item.flags() & ~Qt.ItemIsEditable)  # Только для чтения
+            self.results_table.setItem(row_position, col_idx, item)
+        
+        # Автопрокрутка к новой строке
+        self.results_table.scrollToBottom()
 
     def on_link_found(self, link):
         """Обработка найденной ссылки"""
