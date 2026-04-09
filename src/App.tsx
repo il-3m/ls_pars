@@ -38,6 +38,8 @@ export default function App() {
   const [outXlsx, setOutXlsx] = useState("export/result.xlsx");
   const [traceEnabled, setTraceEnabled] = useState(true);
   const [copyState, setCopyState] = useState<"idle" | "done">("idle");
+  const [showSettings, setShowSettings] = useState(true);
+  const [mnnFilter, setMnnFilter] = useState("");
 
   const runCommand = useMemo(() => {
     const parts = [
@@ -57,14 +59,24 @@ export default function App() {
 
   const filteredRows = useMemo(() => {
     const query = searchWord.trim().toLowerCase();
-    if (!query) {
-      return demoRows;
+    const mnnQuery = mnnFilter.trim().toUpperCase();
+
+    let result = demoRows;
+
+    if (query) {
+      result = result.filter((row) =>
+        Object.values(row).some((value) => value.toLowerCase().includes(query)),
+      );
     }
 
-    return demoRows.filter((row) =>
-      Object.values(row).some((value) => value.toLowerCase().includes(query)),
-    );
-  }, [searchWord]);
+    if (mnnQuery) {
+      result = result.filter((row) =>
+        row.mnn.toUpperCase().includes(mnnQuery),
+      );
+    }
+
+    return result;
+  }, [searchWord, mnnFilter]);
 
   const copyCommand = async () => {
     try {
@@ -73,6 +85,13 @@ export default function App() {
       setTimeout(() => setCopyState("idle"), 1600);
     } catch {
       setCopyState("idle");
+    }
+  };
+
+  const openExcel = () => {
+    const excelPath = outXlsx.trim();
+    if (excelPath) {
+      window.open(excelPath, "_blank");
     }
   };
 
@@ -92,6 +111,7 @@ export default function App() {
         </section>
 
         <section className="mt-8 grid gap-6 border border-slate-800 bg-slate-900/60 p-6 md:grid-cols-[1.45fr_1fr]">
+          {showSettings && (
           <div className="space-y-4 [animation:slideUp_.6s_ease-out]">
             <label className="block text-sm text-slate-300" htmlFor="url">
               Ссылка ЕИС
@@ -160,6 +180,7 @@ export default function App() {
               Сохранять trace для диагностики проблемных ссылок
             </label>
           </div>
+          )}
 
           <div className="space-y-3 border border-slate-700 bg-slate-950/70 p-4 text-sm [animation:pulseIn_.8s_ease-out]">
             <p className="text-slate-400">Готовая команда</p>
@@ -183,10 +204,43 @@ export default function App() {
         </section>
 
         <section className="mt-8 border border-slate-800 bg-slate-900/60 p-6">
-          <h2 className="text-xl font-medium">Предпросмотр фильтра по слову поиска</h2>
-          <p className="mt-1 text-sm text-slate-300">
-            Сейчас найдено: {filteredRows.length} из {demoRows.length}
-          </p>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-medium">Результаты парсинга</h2>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowSettings(!showSettings)}
+                className="border border-slate-600 px-3 py-1.5 text-sm text-slate-300 transition hover:bg-slate-700/50"
+              >
+                {showSettings ? "Скрыть настройки" : "Показать настройки"}
+              </button>
+              <button
+                type="button"
+                onClick={openExcel}
+                className="border border-green-500 px-3 py-1.5 text-sm text-green-400 transition hover:bg-green-500/10"
+              >
+                Открыть Excel
+              </button>
+            </div>
+          </div>
+          
+          <div className="mt-4 flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-slate-300" htmlFor="mnn-filter">
+                Фильтр по МНН:
+              </label>
+              <input
+                id="mnn-filter"
+                value={mnnFilter}
+                onChange={(event) => setMnnFilter(event.target.value)}
+                className="w-48 border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm outline-none ring-cyan-300 transition focus:ring"
+                placeholder="введите МНН"
+              />
+            </div>
+            <p className="text-sm text-slate-400">
+              Найдено: {filteredRows.length} из {demoRows.length}
+            </p>
+          </div>
 
           <div className="mt-4 overflow-x-auto text-sm">
             <table className="min-w-full border-collapse table-auto">
