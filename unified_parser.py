@@ -162,8 +162,8 @@ class UnifiedParserWorker(QThread):
             "searchString": self.search_text,
             "morphology": "on",
             "fz44": "on",
+            "contractStageList": "1",
             "contractStageList_1": "on",
-            "contractStageData": "1",
             "contractDateFrom": self.date_from,
             "contractDateTo": self.date_to,
             "sortBy": "UPDATE_DATE",
@@ -175,13 +175,18 @@ class UnifiedParserWorker(QThread):
 
         # Фильтры: приоритет Росунимеду, затем Москва
         if self.rosunimed_only:
+            # customerIdOrg должен быть полностью закодирован в URL
+            # Формат: внутренний_id:полное_названиеzZИННzZКППzZОГРНzZдоп_поля
+            # Разделитель между полями — строка zZ (маленькая зет, большая зет)
             params["customerIdOrg"] = '14269:ФЕДЕРАЛЬНОЕ ГОСУДАРСТВЕННОЕ БЮДЖЕТНОЕ ОБРАЗОВАТЕЛЬНОЕ УЧРЕЖДЕНИЕ ВЫСШЕГО ОБРАЗОВАНИЯ "РОССИЙСКИЙ УНИВЕРСИТЕТ МЕДИЦИНЫ" МИНИСТЕРСТВА ЗДРАВООХРАНЕНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИzZ03731000459zZ666998zZ63203zZ7707082145zZ'
         elif self.moscow_only:
             params["customerPlace"] = "77000000000,50000000000"
             params["customerPlaceCodes"] = "77000000000,50000000000"
 
         # Кодируем параметры через urlencode для корректной передачи кириллицы
-        url = base_url + "?" + urllib.parse.urlencode(params, safe=':', quote_via=urllib.parse.quote)
+        # Важно: safe='' означает, что ВСЕ специальные символы будут закодированы, включая ':'
+        # Это критично для customerIdOrg, где двоеточие должно стать %3A
+        url = base_url + "?" + urllib.parse.urlencode(params, safe='', quote_via=urllib.parse.quote)
         self.update_output.emit(f"Запрос: {url}")
         self.update_progress.emit(5)
 
@@ -240,7 +245,8 @@ class UnifiedParserWorker(QThread):
                 break
 
             params["pageNumber"] = str(page)
-            url = base_url + "?" + urllib.parse.urlencode(params, safe=':', quote_via=urllib.parse.quote)
+            # Важно: используем safe='' для полного кодирования всех специальных символов
+            url = base_url + "?" + urllib.parse.urlencode(params, safe='', quote_via=urllib.parse.quote)
             self.driver.get(url)
             self.update_output.emit(f"Страница {page}/{total_pages}")
             progress = 10 + int((page / total_pages) * 20)
