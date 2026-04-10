@@ -58,6 +58,7 @@ FIELD_ORDER = [
     "contract_number",
     "reestr_number",
     "customer_name",
+    "contract_link",
 ]
 
 EXPORT_HEADERS_RU = {
@@ -86,6 +87,7 @@ EXPORT_HEADERS_RU = {
     "contract_number": "Номер контракта",
     "reestr_number": "Номер реестра",
     "customer_name": "Наименование заказчика",
+    "contract_link": "Ссылка на контракт в ЕИС",
 }
 
 
@@ -116,6 +118,7 @@ class ParseRecord:
     contract_number: str = ""
     reestr_number: str = ""
     customer_name: str = ""
+    contract_link: str = ""
 
     def as_row(self) -> dict[str, str]:
         return {k: getattr(self, k, "") for k in FIELD_ORDER}
@@ -191,14 +194,11 @@ class EISParser:
                 for (const block of blocks) {
                     const text = block.textContent || "";
                     
-                    // Поиск номера контракта
+                    // Поиск номера контракта - используем улучшенный regex
                     if (!contractNumber && text.includes('Контракт')) {
-                        const match = text.match(/Контракт[^\\d№][№\\s]([^,\\n]+)/);
+                        const match = text.match(/Контракт\\s*[:\\s]*№?\\s*([A-Za-zА-Яа-я0-9\\-/]+)/);
                         if (match) {
                             contractNumber = match[1].trim();
-                            if (contractNumber.startsWith('№')) {
-                                contractNumber = contractNumber.substring(1).trim();
-                            }
                         }
                     }
                     
@@ -248,6 +248,7 @@ class EISParser:
             rec.contract_number = contract_number
             rec.reestr_number = reestr_number
             rec.customer_name = customer_name
+            rec.contract_link = url  # Сохраняем ссылку на страницу контракта
         
         rows = [r.as_row() for r in records]
 
