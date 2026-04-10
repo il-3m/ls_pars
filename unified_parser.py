@@ -177,12 +177,8 @@ class UnifiedParserWorker(QThread):
         if self.rosunimed_only:
             params["customerIdOrg"] = '14269:ФЕДЕРАЛЬНОЕ ГОСУДАРСТВЕННОЕ БЮДЖЕТНОЕ ОБРАЗОВАТЕЛЬНОЕ УЧРЕЖДЕНИЕ ВЫСШЕГО ОБРАЗОВАНИЯ "РОССИЙСКИЙ УНИВЕРСИТЕТ МЕДИЦИНЫ" МИНИСТЕРСТВА ЗДРАВООХРАНЕНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИzZ03731000459zZ666998zZ63203zZ7707082145zZ'
             # Для customerIdOrg нужно полное кодирование (включая двоеточие)
-            # Поэтому используем отдельное кодирование для этого параметра
-            customer_id_encoded = urllib.parse.quote(params["customerIdOrg"], safe='')
-            url = base_url + "?customerIdOrg=" + customer_id_encoded
-            # Добавляем остальные параметры
-            other_params = {k: v for k, v in params.items() if k != "customerIdOrg"}
-            url += "&" + urllib.parse.urlencode(other_params, safe=':', quote_via=urllib.parse.quote)
+            # Используем urlencode с safe='' для всех параметров чтобы гарантировать корректное кодирование
+            url = base_url + "?" + urllib.parse.urlencode(params, safe='', quote_via=urllib.parse.quote)
         elif self.moscow_only:
             params["customerPlace"] = "77000000000,50000000000"
             params["customerPlaceCodes"] = "77000000000,50000000000"
@@ -249,10 +245,8 @@ class UnifiedParserWorker(QThread):
             params["pageNumber"] = str(page)
             # Формируем URL с учётом фильтра Росунимед
             if self.rosunimed_only:
-                customer_id_encoded = urllib.parse.quote(params["customerIdOrg"], safe='')
-                url = base_url + "?customerIdOrg=" + customer_id_encoded
-                other_params = {k: v for k, v in params.items() if k != "customerIdOrg"}
-                url += "&" + urllib.parse.urlencode(other_params, safe=':', quote_via=urllib.parse.quote)
+                # Используем urlencode с safe='' для всех параметров чтобы гарантировать корректное кодирование
+                url = base_url + "?" + urllib.parse.urlencode(params, safe='', quote_via=urllib.parse.quote)
             else:
                 url = base_url + "?" + urllib.parse.urlencode(params, safe=':', quote_via=urllib.parse.quote)
             self.driver.get(url)
