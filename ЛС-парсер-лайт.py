@@ -645,6 +645,16 @@ class ZakupkiParserApp(QMainWindow):
                                                     rest = match2.group(2)
                                                     all_doses = re.findall(single_dose, rest, re.IGNORECASE)
                                                     logging.info(f"    [ОТЛАДКА] Коррекция: rest={repr(rest)}, новые дозы={all_doses}")
+                                            # ДОБАВЛЕНО: Если первое число маленькое (1-9), а второе значительно больше,
+                                            # скорее всего первое число - это количество в упаковке
+                                            elif first_num < 10 and len(all_doses) == 2:
+                                                second_dose = all_doses[1]
+                                                second_match = re.match(r'^(\d+(?:[.,]\d+)?)', second_dose)
+                                                if second_match:
+                                                    second_num = float(second_match.group(1).replace(',', '.'))
+                                                    if second_num > first_num * 5:  # Второе число значительно больше первого
+                                                        logging.info(f"    [ОТЛАДКА] Первое число ({first_num}) - количество, убираем")
+                                                        all_doses = all_doses[1:]  # Убираем первое значение
                                         
                                         dosage = '+'.join(all_doses)
                                         logging.info(f"    [ОТЛАДКА] Объединено: {dosage}")
