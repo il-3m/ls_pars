@@ -611,7 +611,25 @@ class ZakupkiParserApp(QMainWindow):
                                             medical_form = form
                                             break
                                 if dose_idx is not None and dose_idx < len(cell_texts) and cell_texts[dose_idx]:
-                                    dosage = cell_texts[dose_idx]
+                                    # Извлекаем дозировку, находя все паттерны вида "X МГ/МЛ+Y МГ/МЛ" или просто "X МГ/МЛ"
+                                    dose_cell_text = cell_texts[dose_idx]
+                                    # Паттерн ищет комбинации чисел с единицами измерения (мг, мл, мкг, г, ед), включая сложные формы типа "10 МГ/МЛ+1 МГ/МЛ"
+                                    # Основная идея: найти всё, что содержит цифры + единицы измерения, включая комбинации через "+"
+                                    dosage_pattern = r'(\d+(?:[.,]\d+)?\s*(?:мг|мл|мкг|г|ед)(?:\s*/\s*(?:мг|мл|мкг|г|ед))?(?:\s*\+\s*\d+(?:[.,]\d+)?\s*(?:мг|мл|мкг|г|ед)(?:\s*/\s*(?:мг|мл|мкг|г|ед))?)*)'
+                                    dosage_matches = re.findall(dosage_pattern, dose_cell_text, re.IGNORECASE)
+                                    
+                                    if dosage_matches:
+                                        # Если найдено несколько совпадений, берём самое длинное (оно обычно содержит полную дозировку с "+")
+                                        # Или фильтруем: если есть совпадение с "+", берём его
+                                        dosage_with_plus = [m for m in dosage_matches if '+' in m]
+                                        if dosage_with_plus:
+                                            dosage = dosage_with_plus[0]
+                                        else:
+                                            # Если нет с плюсом, берём первое совпадение
+                                            dosage = dosage_matches[0]
+                                    else:
+                                        # Если паттерн не найден, берем весь текст ячейки
+                                        dosage = dose_cell_text
                                 
                                 results.append((
                                     search_text, "Не указано", "Не указано", "Товар",
