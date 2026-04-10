@@ -3,26 +3,36 @@
 *.pyc
 __pycache__/
 
-# Virtual environments
-venv/
-.venv/
-.env
-.env.local
-*.env.*
+# Test files (if they follow common patterns)
+*.test.py
+test_*.py
 
 # Logs
 *.log
 
-# Temporary files
-*.tmp
-*.swp
+# Environment files
+.env
+.env.local
+*.env.*
 
-# IDE/Editor files
+# IDE files
 .vscode/
 .idea/
+*.swp
+*.swo
+*.tmp
 
-# Build artifacts
+# Coverage reports
+.coverage
+coverage/
+htmlcov/
+
+# Distribution artifacts
 dist/
 build/
-target/
+*.egg-info/
+
+# Virtual environments
+venv/
+.venv/
 ```

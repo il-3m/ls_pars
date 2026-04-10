@@ -616,26 +616,40 @@ class ZakupkiParserApp(QMainWindow):
                                             medical_form = form
                                             break
                                 if dose_idx is not None and dose_idx < len(cell_texts) and cell_texts[dose_idx]:
-                                    # Извлекаем дозировку, находя все паттерны вида "X МГ/МЛ+Y МГ/МЛ" или просто "X МГ/МЛ"
+                                    # Извлекаем дозировку, находя ВСЕ отдельные значения и объединяя их через "+"
                                     dose_cell_text = cell_texts[dose_idx]
                                     logging.info(f"    [ОТЛАДКА] Текст ячейки дозировки: {repr(dose_cell_text)}")
                                     
                                     # Паттерн для одного значения дозировки: число + единица измерения + опционально "/" + единица измерения
-                                    single_dose = r'\d+(?:[.,]\d+)?\s*(?:мг|мл|мкг|г|ед)(?:\s*/\s*(?:мг|мл|мкг|г|ед))?'
-                                    # Паттерн для полной дозировки: одно или несколько значений через "+"
-                                    dosage_pattern = rf'({single_dose}(?:\s*\+\s*{single_dose})*)'
-                                    dosage_matches = re.findall(dosage_pattern, dose_cell_text, re.IGNORECASE)
-                                    logging.info(f"    [ОТЛАДКА] Все совпадения паттерна: {dosage_matches}")
+                                    # ВАЖНО: поддерживаем и кириллицу, и латиницу (МЛ/ml, мг/mg и т.д.)
+                                    single_dose = r'\d+(?:[.,]\d+)?\s*(?:мг|мл|мкг|г|ед|mg|ml|mcg|g)(?:\s*/\s*(?:мг|мл|мкг|г|ед|mg|ml|mcg|g))?'
                                     
-                                    if dosage_matches:
-                                        # Если найдено несколько совпадений, берём самое длинное (оно обычно содержит полную дозировку с "+")
-                                        # Или фильтруем: если есть совпадение с "+", берём его
-                                        dosage_with_plus = [m for m in dosage_matches if '+' in m]
-                                        if dosage_with_plus:
-                                            dosage = dosage_with_plus[0]
-                                        else:
-                                            # Если нет с плюсом, берём первое совпадение
-                                            dosage = dosage_matches[0]
+                                    # Находим ВСЕ отдельные значения дозировки в тексте
+                                    all_doses = re.findall(single_dose, dose_cell_text, re.IGNORECASE)
+                                    logging.info(f"    [ОТЛАДКА] Найдено значений: {all_doses}")
+                                    
+                                    if len(all_doses) >= 2:
+                                        # Проверяем, не "слилось" ли первое число (количество) с первой дозировкой
+                                        first_dose = all_doses[0]
+                                        match = re.match(r'^(\d+(?:[.,]\d+)?)', first_dose)
+                                        if match:
+                                            first_num_str = match.group(1)
+                                            first_num = float(first_num_str.replace(',', '.'))
+                                            
+                                            # Если первое число >= 100 и есть ещё значения, скорее всего это количество слилось с дозировкой
+                                            # Типичные дозировки редко бывают >= 100 мг/мл для таких препаратов
+                                            if first_num >= 100 and len(all_doses) == 2:
+                                                # Пробуем убрать первую цифру из начала текста
+                                                match2 = re.match(r'^(\d)(\d+\s*(?:мг|мл|мкг|г|ед|mg|ml|mcg|g).*)$', dose_cell_text, re.IGNORECASE)
+                                                if match2:
+                                                    rest = match2.group(2)
+                                                    all_doses = re.findall(single_dose, rest, re.IGNORECASE)
+                                                    logging.info(f"    [ОТЛАДКА] Коррекция: rest={repr(rest)}, новые дозы={all_doses}")
+                                        
+                                        dosage = '+'.join(all_doses)
+                                        logging.info(f"    [ОТЛАДКА] Объединено: {dosage}")
+                                    elif len(all_doses) == 1:
+                                        dosage = all_doses[0]
                                     else:
                                         # Если паттерн не найден, берем весь текст ячейки
                                         dosage = dose_cell_text
