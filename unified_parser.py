@@ -12,6 +12,7 @@ Workflow:
 
 import sys
 import os
+import urllib.parse
 
 # Mock tkinter if not available (for headless environments)
 try:
@@ -160,28 +161,27 @@ class UnifiedParserWorker(QThread):
         params = {
             "searchString": self.search_text,
             "morphology": "on",
-            "search-filter": "Дате+размещения",
             "fz44": "on",
             "contractStageList_1": "on",
             "contractStageData": "1",
-            "budgetLevelsIdNameHidden": "{}",
             "contractDateFrom": self.date_from,
             "contractDateTo": self.date_to,
             "sortBy": "UPDATE_DATE",
             "pageNumber": "1",
             "sortDirection": "false",
             "recordsPerPage": "_10",
-            "showLotsInfoHidden": "false",
             "strictEqual": "true"
         }
 
+        # Фильтры: приоритет Росунимеду, затем Москва
         if self.rosunimed_only:
             params["customerIdOrg"] = '14269:ФЕДЕРАЛЬНОЕ ГОСУДАРСТВЕННОЕ БЮДЖЕТНОЕ ОБРАЗОВАТЕЛЬНОЕ УЧРЕЖДЕНИЕ ВЫСШЕГО ОБРАЗОВАНИЯ "РОССИЙСКИЙ УНИВЕРСИТЕТ МЕДИЦИНЫ" МИНИСТЕРСТВА ЗДРАВООХРАНЕНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИzZ03731000459zZ666998zZ63203zZ7707082145zZ'
         elif self.moscow_only:
             params["customerPlace"] = "77000000000,50000000000"
             params["customerPlaceCodes"] = "77000000000,50000000000"
 
-        url = base_url + "?" + "&".join([f"{k}={v}" for k, v in params.items()])
+        # Кодируем параметры через urlencode для корректной передачи кириллицы
+        url = base_url + "?" + urllib.parse.urlencode(params, safe=':', quote_via=urllib.parse.quote)
         self.update_output.emit(f"Запрос: {url}")
         self.update_progress.emit(5)
 
@@ -240,7 +240,7 @@ class UnifiedParserWorker(QThread):
                 break
 
             params["pageNumber"] = str(page)
-            url = base_url + "?" + "&".join([f"{k}={v}" for k, v in params.items()])
+            url = base_url + "?" + urllib.parse.urlencode(params, safe=':', quote_via=urllib.parse.quote)
             self.driver.get(url)
             self.update_output.emit(f"Страница {page}/{total_pages}")
             progress = 10 + int((page / total_pages) * 20)
@@ -924,8 +924,8 @@ class UnifiedParserApp(QMainWindow):
         if self.filter_before_search:
             self.append_log(f"Фильтр МНН (до поиска): {self.filter_before_search}")
         
-        date_from = self.date_from.date().toString("yyyy-MM-dd")
-        date_to = self.date_to.date().toString("yyyy-MM-dd")
+        date_from = self.date_from.date().toString("dd.MM.yyyy")
+        date_to = self.date_to.date().toString("dd.MM.yyyy")
         
         try:
             max_contracts = int(self.max_contracts_input.text())
