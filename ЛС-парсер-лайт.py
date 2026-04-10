@@ -25,10 +25,12 @@ import requests
 # Настройка логирования
 logging.basicConfig(
     filename='parser_log.txt',
-    level=logging.INFO,
+    level=logging.DEBUG,  # Максимальный уровень детализации для отладки
     format='%(asctime)s - %(levelname)s - %(message)s',
-    encoding='utf-8'
+    encoding='utf-8',
+    filemode='w'  # Пересоздавать файл при каждом запуске
 )
+logger = logging.getLogger(__name__)
 
 MEDICAL_FORMS = [
     "РАСТВОР ДЛЯ ИНФУЗИЙ", "РАСТВОР ДЛЯ ВНУТРИВЕННОГО ВВЕДЕНИЯ",
@@ -626,6 +628,11 @@ class ZakupkiParserApp(QMainWindow):
                                     # Извлекаем дозировку, находя ВСЕ отдельные значения и объединяя их через "+"
                                     dose_cell_text = cell_texts[dose_idx]
                                     logging.info(f"    [ОТЛАДКА] Текст ячейки дозировки: {repr(dose_cell_text)}")
+                                    
+                                    # ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: получаем текст напрямую из элемента
+                                    dose_cell_element = cells[dose_idx]
+                                    inner_html = dose_cell_element.get_attribute('innerHTML')
+                                    logging.info(f"    [ОТЛАДКА] InnerHTML ячейки дозировки: {repr(inner_html)}")
                                     
                                     # Паттерн для одного значения дозировки: число + единица измерения + опционально "/" + единица измерения
                                     # ВАЖНО: поддерживаем и кириллицу, и латиницу (МЛ/ml, мг/mg и т.д.)
