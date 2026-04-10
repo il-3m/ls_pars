@@ -176,9 +176,8 @@ class UnifiedParserWorker(QThread):
         # Фильтры: приоритет Росунимеду, затем Москва
         if self.rosunimed_only:
             params["customerIdOrg"] = '14269:ФЕДЕРАЛЬНОЕ ГОСУДАРСТВЕННОЕ БЮДЖЕТНОЕ ОБРАЗОВАТЕЛЬНОЕ УЧРЕЖДЕНИЕ ВЫСШЕГО ОБРАЗОВАНИЯ "РОССИЙСКИЙ УНИВЕРСИТЕТ МЕДИЦИНЫ" МИНИСТЕРСТВА ЗДРАВООХРАНЕНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИzZ03731000459zZ666998zZ63203zZ7707082145zZ'
-            # Для customerIdOrg нужно полное кодирование (включая двоеточие)
-            # Используем urlencode с safe='' для всех параметров чтобы гарантировать корректное кодирование
-            url = base_url + "?" + urllib.parse.urlencode(params, safe='', quote_via=urllib.parse.quote)
+            # Ручная склейка URL без кодирования - кириллица должна остаться как есть
+            url = base_url + "?" + "&".join([f"{k}={v}" for k, v in params.items()])
         elif self.moscow_only:
             params["customerPlace"] = "77000000000,50000000000"
             params["customerPlaceCodes"] = "77000000000,50000000000"
@@ -243,10 +242,9 @@ class UnifiedParserWorker(QThread):
                 break
 
             params["pageNumber"] = str(page)
-            # Формируем URL с учётом фильтра Росунимед
+            # Формируем URL с учётом фильтра Росунимед - ручная склейка без кодирования
             if self.rosunimed_only:
-                # Используем urlencode с safe='' для всех параметров чтобы гарантировать корректное кодирование
-                url = base_url + "?" + urllib.parse.urlencode(params, safe='', quote_via=urllib.parse.quote)
+                url = base_url + "?" + "&".join([f"{k}={v}" for k, v in params.items()])
             else:
                 url = base_url + "?" + urllib.parse.urlencode(params, safe=':', quote_via=urllib.parse.quote)
             self.driver.get(url)
