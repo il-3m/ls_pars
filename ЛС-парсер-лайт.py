@@ -588,7 +588,14 @@ class ZakupkiParserApp(QMainWindow):
                             if not cells:
                                 continue
                             
-                            cell_texts = [c.text.strip() for c in cells]
+                            # Используем textContent вместо .text, чтобы захватить весь текст из всех span-элементов
+                            cell_texts = []
+                            for c in cells:
+                                full_text = c.get_attribute("textContent")
+                                if full_text:
+                                    # Удаляем лишние пробелы и переносы строк, но сохраняем содержимое всех span
+                                    full_text = ' '.join(full_text.split())
+                                cell_texts.append(full_text.strip() if full_text else "")
                             
                             if any(search_text_lower in c.lower() for c in cell_texts):
                                 trade_name = reg_number = medical_form = dosage = "Не указано"
