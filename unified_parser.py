@@ -266,27 +266,30 @@ class UnifiedParserWorker(QThread):
                     self.update_output.emit("Обнаружена CAPTCHA!")
                     time.sleep(2)
 
-                # Преобразование ссылки в целевой формат
-                target_link = original_link.replace("common-info.html", "payment-info-and-target-of-order.html")
-                
-                # Извлечение номера реестра
-                reestr_match = re.search(r'reestrNumber=([0-9]+)', target_link)
+                # Извлечение номера реестра из оригинальной ссылки
+                reestr_match = re.search(r'reestrNumber=([0-9]+)', original_link)
                 if reestr_match:
                     reestr_number = reestr_match.group(1)
-                    final_link = f"https://zakupki.gov.ru/epz/contract/contractCard/payment-info-and-target-of-order.html?reestrNumber={reestr_number}"
-                else:
-                    final_link = target_link
-
-                all_links.add(final_link)
-                contracts_count += 1
-                self.link_found.emit(final_link)
-                self.update_output.emit(f"Найдено контрактов: {contracts_count}/{self.max_contracts}")
+                    
+                    # Формируем оба URL: для common-info.html и payment-info-and-target-of-order.html
+                    common_info_url = f"https://zakupki.gov.ru/epz/contract/contractCard/common-info.html?reestrNumber={reestr_number}"
+                    payment_url = f"https://zakupki.gov.ru/epz/contract/contractCard/payment-info-and-target-of-order.html?reestrNumber={reestr_number}"
+                    
+                    # Сохраняем как кортеж (payment_url, common_info_url)
+                    all_links.add((payment_url, common_info_url))
+                    contracts_count += 1
+                    self.link_found.emit(payment_url)
+                    self.update_output.emit(f"Найдено контрактов: {contracts_count}/{self.max_contracts}")
 
         self.found_links = list(all_links)
         return self.found_links
 
-    def parse_all_links(self, links: List[str]):
-        """Парсинг всех ссылок и накопление данных"""
+    def parse_all_links(self, links: List[tuple]):
+        """Парсинг всех ссылок и накопление данных
+        
+        Args:
+            links: Список кортежей (payment_url, common_info_url)
+        """
         parser = EISParser(
             timeout_ms=self.timeout_ms,
             expand_rounds=self.expand_rounds,
@@ -300,14 +303,22 @@ class UnifiedParserWorker(QThread):
                 browser: Browser = await p.chromium.launch(headless=not self.headed)
                 context: BrowserContext = await browser.new_context(locale="ru-RU")
                 
-                for idx, url in enumerate(links, start=1):
-                    self.update_output.emit(f"[{idx}/{len(links)}] Обработка: {url}")
+                for idx, link_tuple in enumerate(links, start=1):
+                    # Поддержка обоих форматов: кортеж (payment_url, common_info_url) или просто строка
+                    if isinstance(link_tuple, tuple):
+                        payment_url, common_info_url = link_tuple
+                    else:
+                        payment_url = link_tuple
+                        # Генерируем common_info_url из payment_url
+                        common_info_url = payment_url.replace("payment-info-and-target-of-order.html", "common-info.html")
+                    
+                    self.update_output.emit(f"[{idx}/{len(links)}] Обработка: {payment_url}")
                     progress = 30 + int((idx / len(links)) * 60)
                     self.update_progress.emit(progress)
                     
                     page = await context.new_page()
                     try:
-                        rows = await parser.parse_url(page, url, archive_dir=archive_dir, save_trace=self.trace)
+                        rows = await parser.parse_url(page, payment_url, archive_dir=archive_dir, save_trace=self.trace, common_info_url=common_info_url)
                         self.all_rows.extend(rows)
                         # Отправляем каждую строку для отображения в таблице
                         for row in rows:
@@ -316,7 +327,7 @@ class UnifiedParserWorker(QThread):
                         self.update_output.emit(f"  -> добавлено строк: {len(rows)}, всего: {len(self.all_rows)}")
                     except Exception as exc:
                         self.update_output.emit(f"  -> ошибка: {exc}")
-                        logging.error(f"Ошибка парсинга {url}: {exc}")
+                        logging.error(f"Ошибка парсинга {payment_url}: {exc}")
                     finally:
                         await page.close()
                 
