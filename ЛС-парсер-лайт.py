@@ -593,6 +593,9 @@ class ZakupkiParserApp(QMainWindow):
                             for c in cells:
                                 full_text = c.get_attribute("textContent")
                                 if full_text:
+                                    # Декодируем HTML-сущности (например, &#43; -> +)
+                                    import html as html_lib
+                                    full_text = html_lib.unescape(full_text)
                                     # Удаляем лишние пробелы и переносы строк, но сохраняем содержимое всех span
                                     full_text = ' '.join(full_text.split())
                                 cell_texts.append(full_text.strip() if full_text else "")
@@ -613,9 +616,10 @@ class ZakupkiParserApp(QMainWindow):
                                 if dose_idx is not None and dose_idx < len(cell_texts) and cell_texts[dose_idx]:
                                     # Извлекаем дозировку, находя все паттерны вида "X МГ/МЛ+Y МГ/МЛ" или просто "X МГ/МЛ"
                                     dose_cell_text = cell_texts[dose_idx]
-                                    # Паттерн ищет комбинации чисел с единицами измерения (мг, мл, мкг, г, ед), включая сложные формы типа "10 МГ/МЛ+1 МГ/МЛ"
-                                    # Основная идея: найти всё, что содержит цифры + единицы измерения, включая комбинации через "+"
-                                    dosage_pattern = r'(\d+(?:[.,]\d+)?\s*(?:мг|мл|мкг|г|ед)(?:\s*/\s*(?:мг|мл|мкг|г|ед))?(?:\s*\+\s*\d+(?:[.,]\d+)?\s*(?:мг|мл|мкг|г|ед)(?:\s*/\s*(?:мг|мл|мкг|г|ед))?)*)'
+                                    # Паттерн для одного значения дозировки: число + единица измерения + опционально "/" + единица измерения
+                                    single_dose = r'\d+(?:[.,]\d+)?\s*(?:мг|мл|мкг|г|ед)(?:\s*/\s*(?:мг|мл|мкг|г|ед))?'
+                                    # Паттерн для полной дозировки: одно или несколько значений через "+"
+                                    dosage_pattern = f'({single_dose}(?:\s*\+\s*{single_dose})*)'
                                     dosage_matches = re.findall(dosage_pattern, dose_cell_text, re.IGNORECASE)
                                     
                                     if dosage_matches:
