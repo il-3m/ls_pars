@@ -54,6 +54,11 @@ FIELD_ORDER = [
     "qty_primary_packages",
     "qty_consumer_units",
     "consumer_package_completeness",
+    "contract_date",
+    "contract_number",
+    "reestr_number",
+    "customer_name",
+    "contract_link",
 ]
 
 EXPORT_HEADERS_RU = {
@@ -78,6 +83,11 @@ EXPORT_HEADERS_RU = {
     "qty_primary_packages": "Количество первичных упаковок в потребительской упаковке",
     "qty_consumer_units": "Количество потребительских единиц в потребительской упаковке",
     "consumer_package_completeness": "Комплектность потребительской упаковки",
+    "contract_date": "Дата контракта",
+    "contract_number": "Номер контракта",
+    "reestr_number": "Номер реестра",
+    "customer_name": "Наименование заказчика",
+    "contract_link": "Ссылка на контракт в ЕИС",
 }
 
 
@@ -104,6 +114,11 @@ class ParseRecord:
     qty_primary_packages: str = ""
     qty_consumer_units: str = ""
     consumer_package_completeness: str = ""
+    contract_date: str = ""
+    contract_number: str = ""
+    reestr_number: str = ""
+    customer_name: str = ""
+    contract_link: str = ""
 
     def as_row(self) -> dict[str, str]:
         return {k: getattr(self, k, "") for k in FIELD_ORDER}
@@ -122,6 +137,7 @@ class EISParser:
         url: str,
         archive_dir: Path,
         save_trace: bool = False,
+        common_info_url: Optional[str] = None,
     ) -> list[dict[str, str]]:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         job_dir = archive_dir / f"job_{ts}"
@@ -130,8 +146,133 @@ class EISParser:
         raw_dir.mkdir(parents=True, exist_ok=True)
         parsed_dir.mkdir(parents=True, exist_ok=True)
 
+        # Извлечение метаданных контракта
+        contract_date = ""
+        contract_number = ""
+        reestr_number = ""
+        customer_name = ""
+
+        # 1. Извлекаем номер реестра из URL
+        reestr_match = re.search(r'reestrNumber=([0-9]+)', url)
+        if reestr_match:
+            reestr_number = reestr_match.group(1)
+
+        # 2. Если есть common_info_url, парсим дату контракта
+        if common_info_url:
+            try:
+                await page.goto(common_info_url, wait_until="domcontentloaded", timeout=self.timeout_ms)
+                await page.wait_for_timeout(self.page_load_delay)
+                await self._close_overlays(page)
+                
+                # XPath для даты заключения контракта
+                contract_date = await page.evaluate('''() => {
+                    const xpath = "//span[@class='section__title' and contains(text(), 'Дата заключения контракта')]/following-sibling::span[@class='section__info']";
+                    const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                    if (result.singleNodeValue) {
+                        const text = result.singleNodeValue.textContent || "";
+                        const match = text.match(/\\b\\d{2}\\.\\d{2}\\.\\d{4}\\b/);
+                        return match ? match[0] : "Не указано";
+                    }
+                    return "Не указано";
+                }''')
+            except Exception as e:
+                contract_date = "Не указано"
+                logging.warning(f"Не удалось извлечь дату контракта из {common_info_url}: {e}")
+
+        # 3. Переходим на основную страницу для парсинга таблицы и метаданных
         await page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms)
         await page.wait_for_timeout(self.page_load_delay)
+
+        # 4. Извлекаем номер контракта и заказчика из payment-info-and-target-of-order.html
+        try:
+            await self._close_overlays(page)
+            metadata = await page.evaluate('''() => {
+                const blocks = document.querySelectorAll('.cardMainInfo__section');
+                let contractNumber = "";
+                let customerName = "";
+                
+                for (const block of blocks) {
+                    const text = block.textContent || "";
+                    
+                    // Поиск номера контракта - используем улучшенный regex
+                    if (!contractNumber && text.includes('Контракт')) {
+                        const match = text.match(/Контракт\\s*[:\\s]*№?\\s*([A-Za-zА-Яа-я0-9\\-/]+)/);
+                        if (match) {
+                            contractNumber = match[1].trim();
+                        }
+                    }
+                    
+                    // Поиск заказчика - улучшенная логика
+                    if (!customerName && text.includes('Заказчик')) {
+                        const lines = text.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
+                        for (let i = 0; i < lines.length - 1; i++) {
+                            const line = lines[i];
+                            // Проверяем, что строка содержит "Заказчик" как заголовок
+                            if (line.includes('Заказчик') && (line.endsWith(':') || line.match(/^Заказчик\\s*$/))) {
+                                const candidate = lines[i + 1];
+                                // Отфильтровываем служебные строки
+                                if (candidate && 
+                                    !candidate.startsWith('Заказчик:') && 
+                                    !candidate.startsWith('Контракт:') && 
+                                    !candidate.startsWith('Реестровый номер:') &&
+                                    candidate.length > 5) {
+                                    customerName = candidate;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                return { contractNumber, customerName };
+            }''')
+            contract_number = metadata.get('contractNumber', '') or contract_number
+            customer_name = metadata.get('customerName', '') or customer_name
+        except Exception as e:
+            logging.warning(f"Не удалось извлечь метаданные контракта: {e}")
+        
+        # Резервный способ извлечения заказчика через XPath
+        if not customer_name:
+            try:
+                customer_name = await page.evaluate('''() => {
+                    const xpath = "//span[contains(text(), 'Заказчик')]/following::span[1]";
+                    const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                    if (result.singleNodeValue) {
+                        const text = result.singleNodeValue.textContent || "";
+                        return text.trim();
+                    }
+                    return "";
+                }''')
+            except Exception:
+                pass
+        
+        # Второй резервный способ - ищем в любом месте страницы
+        if not customer_name:
+            try:
+                customer_name = await page.evaluate('''() => {
+                    const allText = document.body.innerText;
+                    const lines = allText.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
+                    
+                    for (let i = 0; i < lines.length - 1; i++) {
+                        const line = lines[i];
+                        // Ищем строку с "Заказчик:" в конце
+                        if (line.includes('Заказчик:') || line.match(/^Заказчик\\s*$/)) {
+                            const candidate = lines[i + 1];
+                            if (candidate && 
+                                !candidate.startsWith('Заказчик:') && 
+                                !candidate.startsWith('Контракт:') && 
+                                !candidate.startsWith('Реестровый номер:') &&
+                                candidate.length > 10 &&
+                                !candidate.includes('ИНН') && 
+                                !candidate.includes('КПП')) {
+                                return candidate;
+                            }
+                        }
+                    }
+                    return "";
+                }''')
+            except Exception:
+                pass
 
         await self._close_overlays(page)
         frame = await self._find_frame_with_objects(page)
@@ -148,6 +289,15 @@ class EISParser:
         records = [self._normalize_record(item) for item in payload or []]
         records = self._merge_split_records(records)
         records = [self._finalize_record(rec) for rec in records]
+        
+        # Добавляем метаданные контракта в каждую запись
+        for rec in records:
+            rec.contract_date = contract_date
+            rec.contract_number = contract_number
+            rec.reestr_number = reestr_number
+            rec.customer_name = customer_name
+            rec.contract_link = url  # Сохраняем ссылку на страницу контракта
+        
         rows = [r.as_row() for r in records]
 
         (parsed_dir / "rows.json").write_text(
@@ -431,6 +581,9 @@ class EISParser:
 
         for field in FIELD_ORDER:
             if field == "name":
+                continue
+            # Skip contract metadata fields - they are set at parse_url level
+            if field in ('contract_date', 'contract_number', 'reestr_number', 'customer_name'):
                 continue
             if not getattr(base, field) and getattr(extra, field):
                 setattr(base, field, getattr(extra, field))

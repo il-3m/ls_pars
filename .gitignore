@@ -1,4 +1,4 @@
-```gitignore
+```
 # Python
 __pycache__/
 *.pyc
@@ -23,14 +23,18 @@ __pycache__/
 .venv/
 venv/
 node_modules/
-.mypy_cache/
-.pytest_cache/
+
+# Build artifacts
 dist/
 build/
 target/
-.gradle/
 
-# System files
-.DS_Store
-Thumbs.db
+# Coverage
+.coverage
+coverage/
+htmlcov/
+
+# Testing
+.pytest_cache/
+.mypy_cache/
 ```
