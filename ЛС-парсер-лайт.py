@@ -622,44 +622,34 @@ class ZakupkiParserApp(QMainWindow):
                                     
                                     # Паттерн для одного значения дозировки: число + единица измерения + опционально "/" + единица измерения
                                     # ВАЖНО: поддерживаем и кириллицу, и латиницу (МЛ/ml, мг/mg и т.д.)
-                                    single_dose = r'\d+(?:[.,]\d+)?\s*(?:мг|мл|мкг|г|ед|mg|ml|mcg|g)(?:\s*/\s*(?:мг|мл|мкг|г|ед|mg|ml|mcg|g))?'
+                                    single_dose = r'(\d+(?:[.,]\d+)?)\s*(мг|мл|мкг|г|ед|mg|ml|mcg|g)(?:\s*/\s*(мг|мл|мкг|г|ед|mg|ml|mcg|g))?'
                                     
                                     # Находим ВСЕ отдельные значения дозировки в тексте
-                                    all_doses = re.findall(single_dose, dose_cell_text, re.IGNORECASE)
-                                    logging.info(f"    [ОТЛАДКА] Найдено значений: {all_doses}")
+                                    all_matches = re.findall(single_dose, dose_cell_text, re.IGNORECASE)
+                                    logging.info(f"    [ОТЛАДКА] Найдено совпадений: {all_matches}")
                                     
-                                    if len(all_doses) >= 2:
-                                        # Проверяем, не "слилось" ли первое число (количество) с первой дозировкой
-                                        first_dose = all_doses[0]
-                                        match = re.match(r'^(\d+(?:[.,]\d+)?)', first_dose)
-                                        if match:
-                                            first_num_str = match.group(1)
-                                            first_num = float(first_num_str.replace(',', '.'))
+                                    if all_matches:
+                                        doses = []
+                                        for i, match in enumerate(all_matches):
+                                            num_str = match[0]
+                                            unit1 = match[1]
+                                            unit2 = match[2] if len(match) > 2 and match[2] else ''
                                             
-                                            # Если первое число >= 100 и есть ещё значения, скорее всего это количество слилось с дозировкой
-                                            # Типичные дозировки редко бывают >= 100 мг/мл для таких препаратов
-                                            if first_num >= 100 and len(all_doses) == 2:
-                                                # Пробуем убрать первую цифру из начала текста
-                                                match2 = re.match(r'^(\d)(\d+\s*(?:мг|мл|мкг|г|ед|mg|ml|mcg|g).*)$', dose_cell_text, re.IGNORECASE)
-                                                if match2:
-                                                    rest = match2.group(2)
-                                                    all_doses = re.findall(single_dose, rest, re.IGNORECASE)
-                                                    logging.info(f"    [ОТЛАДКА] Коррекция: rest={repr(rest)}, новые дозы={all_doses}")
-                                            # ДОБАВЛЕНО: Если первое число маленькое (1-9), а второе значительно больше,
-                                            # скорее всего первое число - это количество в упаковке
-                                            elif first_num < 10 and len(all_doses) == 2:
-                                                second_dose = all_doses[1]
-                                                second_match = re.match(r'^(\d+(?:[.,]\d+)?)', second_dose)
-                                                if second_match:
-                                                    second_num = float(second_match.group(1).replace(',', '.'))
-                                                    if second_num > first_num * 5:  # Второе число значительно больше первого
-                                                        logging.info(f"    [ОТЛАДКА] Первое число ({first_num}) - количество, убираем")
-                                                        all_doses = all_doses[1:]  # Убираем первое значение
+                                            # Проверяем, не "слилось" ли количество с дозировкой
+                                            # Если первое число >= 100, предполагаем, что это количество+дозировка слиты
+                                            num_val = float(num_str.replace(',', '.'))
+                                            if i == 0 and num_val >= 100 and len(num_str) >= 3:
+                                                # Разбиваем: первая цифра - количество, остальные - дозировка
+                                                rest_digits = num_str[1:]
+                                                dose_str = f"{rest_digits} {unit1}" + (f"/{unit2}" if unit2 else "")
+                                                logging.info(f"    [ОТЛАДКА] Коррекция: {num_str} -> {rest_digits} (убрали первую цифру)")
+                                                doses.append(dose_str)
+                                            else:
+                                                dose_str = f"{num_str} {unit1}" + (f"/{unit2}" if unit2 else "")
+                                                doses.append(dose_str)
                                         
-                                        dosage = '+'.join(all_doses)
-                                        logging.info(f"    [ОТЛАДКА] Объединено: {dosage}")
-                                    elif len(all_doses) == 1:
-                                        dosage = all_doses[0]
+                                        dosage = '+'.join(doses)
+                                        logging.info(f"    [ОТЛАДКА] Итоговая дозировка: {dosage}")
                                     else:
                                         # Если паттерн не найден, берем весь текст ячейки
                                         dosage = dose_cell_text

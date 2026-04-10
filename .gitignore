@@ -1,42 +1,34 @@
-```
+```python
 # Compiled Python files
 *.pyc
 __pycache__/
 
-# Virtual environments
-venv/
-.venv/
-env/
+# Test files directory (if tests generate artifacts)
+.test*
+.pytest_cache/
 
 # Logs
 *.log
-
-# Temporary files
-*.tmp
-*.swp
 
 # Environment files
 .env
 .env.local
 *.env.*
 
-# Editors
+# IDE files
 .vscode/
 .idea/
+*.swp
+*.swo
+*.tmp
 
 # Coverage reports
 .coverage
 coverage/
 htmlcov/
 
-# Package distributions
+# Distribution artifacts
 dist/
 build/
 *.egg-info/
-
-# MyPy cache
-.mypy_cache/
-
-# Pytest cache
-.pytest_cache/
 ```
