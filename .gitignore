@@ -17,7 +17,7 @@ venv/
 *.tmp
 *.swp
 
-# Editors
+# IDE/Editor files
 .vscode/
 .idea/
 
@@ -25,11 +25,4 @@ venv/
 dist/
 build/
 target/
-
-# Dependencies
-node_modules/
-.mypy_cache/
-.pytest_cache/
-coverage/
-htmlcov/
 ```

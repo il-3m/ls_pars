@@ -588,16 +588,18 @@ class ZakupkiParserApp(QMainWindow):
                             if not cells:
                                 continue
                             
-                            # Используем textContent вместо .text, чтобы захватить весь текст из всех span-элементов
+                            # Получаем текст из ячеек таблицы
                             cell_texts = []
                             for c in cells:
+                                # Получаем весь текст ячейки, включая все дочерние элементы
                                 full_text = c.get_attribute("textContent")
                                 if full_text:
+                                    # Нормализуем пробелы и переносы строк
+                                    full_text = ' '.join(full_text.split())
                                     # Декодируем HTML-сущности (например, &#43; -> +)
                                     import html as html_lib
                                     full_text = html_lib.unescape(full_text)
-                                    # Удаляем лишние пробелы и переносы строк, но сохраняем содержимое всех span
-                                    full_text = ' '.join(full_text.split())
+                                
                                 cell_texts.append(full_text.strip() if full_text else "")
                             
                             if any(search_text_lower in c.lower() for c in cell_texts):
@@ -616,11 +618,14 @@ class ZakupkiParserApp(QMainWindow):
                                 if dose_idx is not None and dose_idx < len(cell_texts) and cell_texts[dose_idx]:
                                     # Извлекаем дозировку, находя все паттерны вида "X МГ/МЛ+Y МГ/МЛ" или просто "X МГ/МЛ"
                                     dose_cell_text = cell_texts[dose_idx]
+                                    logging.info(f"    [ОТЛАДКА] Текст ячейки дозировки: {repr(dose_cell_text)}")
+                                    
                                     # Паттерн для одного значения дозировки: число + единица измерения + опционально "/" + единица измерения
                                     single_dose = r'\d+(?:[.,]\d+)?\s*(?:мг|мл|мкг|г|ед)(?:\s*/\s*(?:мг|мл|мкг|г|ед))?'
                                     # Паттерн для полной дозировки: одно или несколько значений через "+"
-                                    dosage_pattern = f'({single_dose}(?:\s*\+\s*{single_dose})*)'
+                                    dosage_pattern = rf'({single_dose}(?:\s*\+\s*{single_dose})*)'
                                     dosage_matches = re.findall(dosage_pattern, dose_cell_text, re.IGNORECASE)
+                                    logging.info(f"    [ОТЛАДКА] Все совпадения паттерна: {dosage_matches}")
                                     
                                     if dosage_matches:
                                         # Если найдено несколько совпадений, берём самое длинное (оно обычно содержит полную дозировку с "+")
