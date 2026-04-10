@@ -162,8 +162,8 @@ class UnifiedParserWorker(QThread):
             "searchString": self.search_text,
             "morphology": "on",
             "fz44": "on",
+            "contractStageList": "1",
             "contractStageList_1": "on",
-            "contractStageData": "1",
             "contractDateFrom": self.date_from,
             "contractDateTo": self.date_to,
             "sortBy": "UPDATE_DATE",
@@ -175,14 +175,44 @@ class UnifiedParserWorker(QThread):
 
         # Фильтры: приоритет Росунимеду, затем Москва
         if self.rosunimed_only:
-            params["customerIdOrg"] = '14269:ФЕДЕРАЛЬНОЕ ГОСУДАРСТВЕННОЕ БЮДЖЕТНОЕ ОБРАЗОВАТЕЛЬНОЕ УЧРЕЖДЕНИЕ ВЫСШЕГО ОБРАЗОВАНИЯ "РОССИЙСКИЙ УНИВЕРСИТЕТ МЕДИЦИНЫ" МИНИСТЕРСТВА ЗДРАВООХРАНЕНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИzZ03731000459zZ666998zZ63203zZ7707082145zZ'
+            # КРИТИЧЕСКИ ВАЖНО: customerIdOrg должен ТОЧНО совпадать с записью в базе ЕИС
+            # Используем ПОЛНУЮ версию из ручной ссылки, а не минимальную
+            # Формат: внутренний_ид:полное_название_организацииzZИННzZКППzZкод_причины_учётаzZОГРНzZдоп_поляzZещё_IDzZфинальный_ID
+            # Значение взято из рабочей ручной ссылки (100% совпадение с ЕИС)
+            full_customer_id = '14269:ФЕДЕРАЛЬНОЕ ГОСУДАРСТВЕННОЕ БЮДЖЕТНОЕ ОБРАЗОВАТЕЛЬНОЕ УЧРЕЖДЕНИЕ ВЫСШЕГО ОБРАЗОВАНИЯ "РОССИЙСКИЙ УНИВЕРСИТЕТ МЕДИЦИНЫ" МИНИСТЕРСТВА ЗДРАВООХРАНЕНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИzZ03731000459zZ666998zZ63203zZ7707082145zZzZ770701001zZ1027739808898'
+            params["customerIdOrg"] = full_customer_id
+            
+            logging.info(f"=== РОСУНИМЕД ФИЛЬТР ===")
+            logging.info(f"customerIdOrg (raw): {params['customerIdOrg']}")
+            
         elif self.moscow_only:
             params["customerPlace"] = "77000000000,50000000000"
             params["customerPlaceCodes"] = "77000000000,50000000000"
 
         # Кодируем параметры через urlencode для корректной передачи кириллицы
-        url = base_url + "?" + urllib.parse.urlencode(params, safe=':', quote_via=urllib.parse.quote)
-        self.update_output.emit(f"Запрос: {url}")
+        # Важно: safe='' означает, что ВСЕ специальные символы будут закодированы, включая ':'
+        # Это критично для customerIdOrg, где двоеточие должно стать %3A
+        # Используем quote_via=urllib.parse.quote_plus для кодирования пробелей как '+' (как в ручной ссылке)
+        url = base_url + "?" + urllib.parse.urlencode(params, safe='', quote_via=urllib.parse.quote_plus)
+        
+        # ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ДЛЯ ОТЛАДКИ
+        logging.info(f"=== ПОИСКОВЫЙ ЗАПРОС ===")
+        logging.info(f"Поисковый текст: {self.search_text}")
+        logging.info(f"Росунимед: {self.rosunimed_only}, Москва: {self.moscow_only}")
+        logging.info(f"Даты: {self.date_from} - {self.date_to}")
+        logging.info(f"Полный URL для поиска:")
+        logging.info(f"{url}")
+        logging.info(f"========================")
+        
+        # Вывод в интерфейс (сокращённая версия URL для читаемости)
+        self.update_output.emit(f"Поиск: {self.search_text}")
+        if self.rosunimed_only:
+            self.update_output.emit("Фильтр: ТОЛЬКО РОСУНИМЕД")
+        elif self.moscow_only:
+            self.update_output.emit("Фильтр: ТОЛЬКО МОСКВА")
+        self.update_output.emit(f"URL запроса (скопируйте для отладки):")
+        self.update_output.emit(f"{url}")
+        self.update_output.emit("")
         self.update_progress.emit(5)
 
         # Инициализация WebDriver
@@ -240,7 +270,8 @@ class UnifiedParserWorker(QThread):
                 break
 
             params["pageNumber"] = str(page)
-            url = base_url + "?" + urllib.parse.urlencode(params, safe=':', quote_via=urllib.parse.quote)
+            # Важно: используем safe='' и quote_plus для полного кодирования всех специальных символов
+            url = base_url + "?" + urllib.parse.urlencode(params, safe='', quote_via=urllib.parse.quote_plus)
             self.driver.get(url)
             self.update_output.emit(f"Страница {page}/{total_pages}")
             progress = 10 + int((page / total_pages) * 20)
