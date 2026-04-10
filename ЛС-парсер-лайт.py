@@ -25,10 +25,12 @@ import requests
 # Настройка логирования
 logging.basicConfig(
     filename='parser_log.txt',
-    level=logging.INFO,
+    level=logging.DEBUG,  # Максимальный уровень детализации для отладки
     format='%(asctime)s - %(levelname)s - %(message)s',
-    encoding='utf-8'
+    encoding='utf-8',
+    filemode='w'  # Пересоздавать файл при каждом запуске
 )
+logger = logging.getLogger(__name__)
 
 MEDICAL_FORMS = [
     "РАСТВОР ДЛЯ ИНФУЗИЙ", "РАСТВОР ДЛЯ ВНУТРИВЕННОГО ВВЕДЕНИЯ",
@@ -588,7 +590,26 @@ class ZakupkiParserApp(QMainWindow):
                             if not cells:
                                 continue
                             
-                            cell_texts = [c.text.strip() for c in cells]
+                            # Получаем текст из ячеек таблицы
+                            cell_texts = []
+                            for c in cells:
+                                # Получаем весь текст ячейки, включая все дочерние элементы
+                                full_text = c.get_attribute("textContent")
+                                if full_text:
+                                    # Нормализуем пробелы и переносы строк
+                                    full_text = ' '.join(full_text.split())
+                                    # Декодируем HTML-сущности (например, &#43; -> +)
+                                    import html as html_lib
+                                    full_text = html_lib.unescape(full_text)
+                                    
+                                    # ВАЖНО: если есть несколько span с числами, добавляем пробел между ними
+                                    # Например: <span>1</span><span>10 МГ/МЛ+1 МГ/МЛ</span> -> "1 10 МГ/МЛ+1 МГ/МЛ"
+                                    # Разбиваем слипшиеся цифры ТОЛЬКО в начале строки, если первая цифра 1-9 (количество)
+                                    # и за ней сразу следует другая цифра >= 1 (не 0!), образуя число >= 10 (начало дозировки)
+                                    if re.match(r'^([1-9])([1-9]\d*)', full_text):
+                                        full_text = re.sub(r'^([1-9])([1-9]\d*)', r'\1 \2', full_text)
+                                
+                                cell_texts.append(full_text.strip() if full_text else "")
                             
                             if any(search_text_lower in c.lower() for c in cell_texts):
                                 trade_name = reg_number = medical_form = dosage = "Не указано"
@@ -604,7 +625,63 @@ class ZakupkiParserApp(QMainWindow):
                                             medical_form = form
                                             break
                                 if dose_idx is not None and dose_idx < len(cell_texts) and cell_texts[dose_idx]:
-                                    dosage = cell_texts[dose_idx]
+                                    # Извлекаем дозировку, находя ВСЕ отдельные значения и объединяя их через "+"
+                                    dose_cell_text = cell_texts[dose_idx]
+                                    logging.info(f"    [ОТЛАДКА] Текст ячейки дозировки: {repr(dose_cell_text)}")
+                                    
+                                    # ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: получаем текст напрямую из элемента
+                                    dose_cell_element = cells[dose_idx]
+                                    inner_html = dose_cell_element.get_attribute('innerHTML')
+                                    logging.info(f"    [ОТЛАДКА] InnerHTML ячейки дозировки: {repr(inner_html)}")
+                                    
+                                    # Паттерн для одного значения дозировки: число + единица измерения + опционально "/" + единица измерения
+                                    # ВАЖНО: поддерживаем и кириллицу, и латиницу (МЛ/ml, мг/mg и т.д.)
+                                    single_dose = r'(\d+(?:[.,]\d+)?)\s*(мг|мл|мкг|г|ед|mg|ml|mcg|g)(?:\s*/\s*(мг|мл|мкг|г|ед|mg|ml|mcg|g))?'
+                                    
+                                    # Находим ВСЕ отдельные значения дозировки в тексте
+                                    all_matches = re.findall(single_dose, dose_cell_text, re.IGNORECASE)
+                                    logging.info(f"    [ОТЛАДКА] Найдено совпадений: {all_matches}")
+                                    
+                                    if all_matches:
+                                        doses = []
+                                        for i, match in enumerate(all_matches):
+                                            num_str = match[0]
+                                            unit1 = match[1]
+                                            unit2 = match[2] if len(match) > 2 and match[2] else ''
+                                            
+                                            # Проверяем, не "слилось" ли количество с дозировкой
+                                            # Если первое число >= 100, предполагаем, что это количество+дозировка слиты
+                                            # ТАКЖЕ: если первое число маленькое (1-9), а второе большое - это тоже слияние
+                                            num_val = float(num_str.replace(',', '.'))
+                                            
+                                            # Случай 1: число >= 100 (например, 110 вместо 10)
+                                            if i == 0 and num_val >= 100 and len(num_str) >= 3:
+                                                rest_digits = num_str[1:]
+                                                dose_str = f"{rest_digits} {unit1}" + (f"/{unit2}" if unit2 else "")
+                                                logging.info(f"    [ОТЛАДКА] Коррекция >=100: {num_str} -> {rest_digits}")
+                                                doses.append(dose_str)
+                                            # Случай 2: первое число маленькое (1-9), проверяем следующее
+                                            elif i == 0 and num_val < 10 and len(all_matches) > 1:
+                                                next_num_str = all_matches[1][0]
+                                                next_num_val = float(next_num_str.replace(',', '.'))
+                                                # Если следующее число значительно больше, значит первое - это количество
+                                                if next_num_val > num_val * 5:
+                                                    dose_str = f"{num_str} {unit1}" + (f"/{unit2}" if unit2 else "")
+                                                    logging.info(f"    [ОТЛАДКА] Пропускаем количество: {num_str}")
+                                                    # НЕ добавляем это в doses, это количество упаковок
+                                                else:
+                                                    dose_str = f"{num_str} {unit1}" + (f"/{unit2}" if unit2 else "")
+                                                    doses.append(dose_str)
+                                            # Случай 3: все остальные - добавляем как есть
+                                            else:
+                                                dose_str = f"{num_str} {unit1}" + (f"/{unit2}" if unit2 else "")
+                                                doses.append(dose_str)
+                                        
+                                        dosage = '+'.join(doses)
+                                        logging.info(f"    [ОТЛАДКА] Итоговая дозировка: {dosage}")
+                                    else:
+                                        # Если паттерн не найден, берем весь текст ячейки
+                                        dosage = dose_cell_text
                                 
                                 results.append((
                                     search_text, "Не указано", "Не указано", "Товар",
