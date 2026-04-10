@@ -176,16 +176,18 @@ class UnifiedParserWorker(QThread):
         # Фильтры: приоритет Росунимеду, затем Москва
         if self.rosunimed_only:
             # КРИТИЧЕСКИ ВАЖНО: customerIdOrg должен точно совпадать с записью в базе ЕИС
-            # По инструкции: "не собирайте это поле вручную, надёжнее взять готовое значение из адресной строки"
-            # Проблема: полное название организации может отличаться от ожидаемого
-            # Решение: используем формат с internal_id и ИНН, без полного названия
-            # Формат проверен на рабочем поиске через браузер ЕИС
-            params["customerIdOrg"] = "14269::zZ03731000459zZzZzZzZ"
+            # Формат: внутренний_ид:полное_название_организацииzZИННzZКППzZОГРНzZдоп_поля
+            # Для Росунимеда:
+            # - внутренний ID: 14269
+            # - полное название: ФЕДЕРАЛЬНОЕ ГОСУДАРСТВЕННОЕ БЮДЖЕТНОЕ ОБРАЗОВАТЕЛЬНОЕ УЧРЕЖДЕНИЕ ВЫСШЕГО ОБРАЗОВАНИЯ "РОССИЙСКИЙ УНИВЕРСИТЕТ МЕДИЦИНЫ" МИНИСТЕРСТВА ЗДРАВООХРАНЕНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИ
+            # - ИНН: 03731000459
+            # Разделитель между полями — строка zZ (маленькая зет, большая зет)
+            full_name = 'ФЕДЕРАЛЬНОЕ ГОСУДАРСТВЕННОЕ БЮДЖЕТНОЕ ОБРАЗОВАТЕЛЬНОЕ УЧРЕЖДЕНИЕ ВЫСШЕГО ОБРАЗОВАНИЯ "РОССИЙСКИЙ УНИВЕРСИТЕТ МЕДИЦИНЫ" МИНИСТЕРСТВА ЗДРАВООХРАНЕНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИ'
+            params["customerIdOrg"] = f"14269:{full_name}zZ03731000459zZzZzZzZ"
             
-            # Дополнительный фильтр по названию заказчика для надёжности
-            params["customerName"] = "РОССИЙСКИЙ УНИВЕРСИТЕТ МЕДИЦИНЫ"
+            logging.info(f"=== РОСУНИМЕД ФИЛЬТР ===")
+            logging.info(f"customerIdOrg (raw): {params['customerIdOrg']}")
             
-            logging.info(f"Фильтр Росунимед: customerIdOrg={params['customerIdOrg']}, customerName={params['customerName']}")
         elif self.moscow_only:
             params["customerPlace"] = "77000000000,50000000000"
             params["customerPlaceCodes"] = "77000000000,50000000000"
@@ -194,7 +196,25 @@ class UnifiedParserWorker(QThread):
         # Важно: safe='' означает, что ВСЕ специальные символы будут закодированы, включая ':'
         # Это критично для customerIdOrg, где двоеточие должно стать %3A
         url = base_url + "?" + urllib.parse.urlencode(params, safe='', quote_via=urllib.parse.quote)
-        self.update_output.emit(f"Запрос: {url}")
+        
+        # ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ДЛЯ ОТЛАДКИ
+        logging.info(f"=== ПОИСКОВЫЙ ЗАПРОС ===")
+        logging.info(f"Поисковый текст: {self.search_text}")
+        logging.info(f"Росунимед: {self.rosunimed_only}, Москва: {self.moscow_only}")
+        logging.info(f"Даты: {self.date_from} - {self.date_to}")
+        logging.info(f"Полный URL для поиска:")
+        logging.info(f"{url}")
+        logging.info(f"========================")
+        
+        # Вывод в интерфейс (сокращённая версия URL для читаемости)
+        self.update_output.emit(f"Поиск: {self.search_text}")
+        if self.rosunimed_only:
+            self.update_output.emit("Фильтр: ТОЛЬКО РОСУНИМЕД")
+        elif self.moscow_only:
+            self.update_output.emit("Фильтр: ТОЛЬКО МОСКВА")
+        self.update_output.emit(f"URL запроса (скопируйте для отладки):")
+        self.update_output.emit(f"{url}")
+        self.update_output.emit("")
         self.update_progress.emit(5)
 
         # Инициализация WebDriver
