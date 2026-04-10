@@ -603,9 +603,9 @@ class ZakupkiParserApp(QMainWindow):
                                     # ВАЖНО: если есть несколько span с числами, добавляем пробел между ними
                                     # Например: <span>1</span><span>10 МГ/МЛ+1 МГ/МЛ</span> -> "1 10 МГ/МЛ+1 МГ/МЛ"
                                     # Разбиваем слипшиеся цифры ТОЛЬКО в начале строки, если первая цифра 1-9 (количество)
-                                    # и за ней сразу следует другая цифра (начало дозировки)
-                                    if re.match(r'^[1-9]\d', full_text):
-                                        full_text = re.sub(r'^([1-9])(\d)', r'\1 \2', full_text)
+                                    # и за ней сразу следует другая цифра >= 1 (не 0!), образуя число >= 10 (начало дозировки)
+                                    if re.match(r'^([1-9])([1-9]\d*)', full_text):
+                                        full_text = re.sub(r'^([1-9])([1-9]\d*)', r'\1 \2', full_text)
                                 
                                 cell_texts.append(full_text.strip() if full_text else "")
                             
@@ -665,6 +665,7 @@ class ZakupkiParserApp(QMainWindow):
                                                 else:
                                                     dose_str = f"{num_str} {unit1}" + (f"/{unit2}" if unit2 else "")
                                                     doses.append(dose_str)
+                                            # Случай 3: все остальные - добавляем как есть
                                             else:
                                                 dose_str = f"{num_str} {unit1}" + (f"/{unit2}" if unit2 else "")
                                                 doses.append(dose_str)
