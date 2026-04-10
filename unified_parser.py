@@ -175,15 +175,12 @@ class UnifiedParserWorker(QThread):
 
         # Фильтры: приоритет Росунимеду, затем Москва
         if self.rosunimed_only:
-            # КРИТИЧЕСКИ ВАЖНО: customerIdOrg должен точно совпадать с записью в базе ЕИС
-            # Формат: внутренний_ид:полное_название_организацииzZИННzZКППzZОГРНzZдоп_поля
-            # Для Росунимеда:
-            # - внутренний ID: 14269
-            # - полное название: ФЕДЕРАЛЬНОЕ ГОСУДАРСТВЕННОЕ БЮДЖЕТНОЕ ОБРАЗОВАТЕЛЬНОЕ УЧРЕЖДЕНИЕ ВЫСШЕГО ОБРАЗОВАНИЯ "РОССИЙСКИЙ УНИВЕРСИТЕТ МЕДИЦИНЫ" МИНИСТЕРСТВА ЗДРАВООХРАНЕНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИ
-            # - ИНН: 03731000459
-            # Разделитель между полями — строка zZ (маленькая зет, большая зет)
-            full_name = 'ФЕДЕРАЛЬНОЕ ГОСУДАРСТВЕННОЕ БЮДЖЕТНОЕ ОБРАЗОВАТЕЛЬНОЕ УЧРЕЖДЕНИЕ ВЫСШЕГО ОБРАЗОВАНИЯ "РОССИЙСКИЙ УНИВЕРСИТЕТ МЕДИЦИНЫ" МИНИСТЕРСТВА ЗДРАВООХРАНЕНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИ'
-            params["customerIdOrg"] = f"14269:{full_name}zZ03731000459zZzZzZzZ"
+            # КРИТИЧЕСКИ ВАЖНО: customerIdOrg должен ТОЧНО совпадать с записью в базе ЕИС
+            # Используем ПОЛНУЮ версию из ручной ссылки, а не минимальную
+            # Формат: внутренний_ид:полное_название_организацииzZИННzZКППzZкод_причины_учётаzZОГРНzZдоп_поляzZещё_IDzZфинальный_ID
+            # Значение взято из рабочей ручной ссылки (100% совпадение с ЕИС)
+            full_customer_id = '14269:ФЕДЕРАЛЬНОЕ ГОСУДАРСТВЕННОЕ БЮДЖЕТНОЕ ОБРАЗОВАТЕЛЬНОЕ УЧРЕЖДЕНИЕ ВЫСШЕГО ОБРАЗОВАНИЯ "РОССИЙСКИЙ УНИВЕРСИТЕТ МЕДИЦИНЫ" МИНИСТЕРСТВА ЗДРАВООХРАНЕНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИzZ03731000459zZ666998zZ63203zZ7707082145zZzZ770701001zZ1027739808898'
+            params["customerIdOrg"] = full_customer_id
             
             logging.info(f"=== РОСУНИМЕД ФИЛЬТР ===")
             logging.info(f"customerIdOrg (raw): {params['customerIdOrg']}")
@@ -195,7 +192,8 @@ class UnifiedParserWorker(QThread):
         # Кодируем параметры через urlencode для корректной передачи кириллицы
         # Важно: safe='' означает, что ВСЕ специальные символы будут закодированы, включая ':'
         # Это критично для customerIdOrg, где двоеточие должно стать %3A
-        url = base_url + "?" + urllib.parse.urlencode(params, safe='', quote_via=urllib.parse.quote)
+        # Используем quote_via=urllib.parse.quote_plus для кодирования пробелей как '+' (как в ручной ссылке)
+        url = base_url + "?" + urllib.parse.urlencode(params, safe='', quote_via=urllib.parse.quote_plus)
         
         # ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ ДЛЯ ОТЛАДКИ
         logging.info(f"=== ПОИСКОВЫЙ ЗАПРОС ===")
@@ -272,8 +270,8 @@ class UnifiedParserWorker(QThread):
                 break
 
             params["pageNumber"] = str(page)
-            # Важно: используем safe='' для полного кодирования всех специальных символов
-            url = base_url + "?" + urllib.parse.urlencode(params, safe='', quote_via=urllib.parse.quote)
+            # Важно: используем safe='' и quote_plus для полного кодирования всех специальных символов
+            url = base_url + "?" + urllib.parse.urlencode(params, safe='', quote_via=urllib.parse.quote_plus)
             self.driver.get(url)
             self.update_output.emit(f"Страница {page}/{total_pages}")
             progress = 10 + int((page / total_pages) * 20)
