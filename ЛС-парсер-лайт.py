@@ -599,6 +599,13 @@ class ZakupkiParserApp(QMainWindow):
                                     # Декодируем HTML-сущности (например, &#43; -> +)
                                     import html as html_lib
                                     full_text = html_lib.unescape(full_text)
+                                    
+                                    # ВАЖНО: если есть несколько span с числами, добавляем пробел между ними
+                                    # Например: <span>1</span><span>10 МГ/МЛ+1 МГ/МЛ</span> -> "1 10 МГ/МЛ+1 МГ/МЛ"
+                                    # Разбиваем слипшиеся цифры ТОЛЬКО в начале строки, если первая цифра 1-9 (количество)
+                                    # и за ней сразу следует другая цифра (начало дозировки)
+                                    if re.match(r'^[1-9]\d', full_text):
+                                        full_text = re.sub(r'^([1-9])(\d)', r'\1 \2', full_text)
                                 
                                 cell_texts.append(full_text.strip() if full_text else "")
                             
@@ -637,13 +644,27 @@ class ZakupkiParserApp(QMainWindow):
                                             
                                             # Проверяем, не "слилось" ли количество с дозировкой
                                             # Если первое число >= 100, предполагаем, что это количество+дозировка слиты
+                                            # ТАКЖЕ: если первое число маленькое (1-9), а второе большое - это тоже слияние
                                             num_val = float(num_str.replace(',', '.'))
+                                            
+                                            # Случай 1: число >= 100 (например, 110 вместо 10)
                                             if i == 0 and num_val >= 100 and len(num_str) >= 3:
-                                                # Разбиваем: первая цифра - количество, остальные - дозировка
                                                 rest_digits = num_str[1:]
                                                 dose_str = f"{rest_digits} {unit1}" + (f"/{unit2}" if unit2 else "")
-                                                logging.info(f"    [ОТЛАДКА] Коррекция: {num_str} -> {rest_digits} (убрали первую цифру)")
+                                                logging.info(f"    [ОТЛАДКА] Коррекция >=100: {num_str} -> {rest_digits}")
                                                 doses.append(dose_str)
+                                            # Случай 2: первое число маленькое (1-9), проверяем следующее
+                                            elif i == 0 and num_val < 10 and len(all_matches) > 1:
+                                                next_num_str = all_matches[1][0]
+                                                next_num_val = float(next_num_str.replace(',', '.'))
+                                                # Если следующее число значительно больше, значит первое - это количество
+                                                if next_num_val > num_val * 5:
+                                                    dose_str = f"{num_str} {unit1}" + (f"/{unit2}" if unit2 else "")
+                                                    logging.info(f"    [ОТЛАДКА] Пропускаем количество: {num_str}")
+                                                    # НЕ добавляем это в doses, это количество упаковок
+                                                else:
+                                                    dose_str = f"{num_str} {unit1}" + (f"/{unit2}" if unit2 else "")
+                                                    doses.append(dose_str)
                                             else:
                                                 dose_str = f"{num_str} {unit1}" + (f"/{unit2}" if unit2 else "")
                                                 doses.append(dose_str)
