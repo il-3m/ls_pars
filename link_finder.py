@@ -85,11 +85,14 @@ class LinkFinderWorker(QThread):
 
         if self.rosunimed_only:
             params["customerIdOrg"] = '14269:ФЕДЕРАЛЬНОЕ ГОСУДАРСТВЕННОЕ БЮДЖЕТНОЕ ОБРАЗОВАТЕЛЬНОЕ УЧРЕЖДЕНИЕ ВЫСШЕГО ОБРАЗОВАНИЯ "РОССИЙСКИЙ УНИВЕРСИТЕТ МЕДИЦИНЫ" МИНИСТЕРСТВА ЗДРАВООХРАНЕНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИzZ03731000459zZ666998zZ63203zZ7707082145zZ'
+            # Для customerIdOrg нужно полное кодирование (включая двоеточие)
+            url = base_url + "?" + urllib.parse.urlencode(params, safe='', quote_via=urllib.parse.quote)
         elif self.moscow_only:
             params["customerPlace"] = "77000000000,50000000000"
             params["customerPlaceCodes"] = "77000000000,50000000000"
-
-        url = base_url + "?" + "&".join([f"{k}={v}" for k, v in params.items()])
+            url = base_url + "?" + urllib.parse.urlencode(params, safe=':', quote_via=urllib.parse.quote)
+        else:
+            url = base_url + "?" + urllib.parse.urlencode(params, safe=':', quote_via=urllib.parse.quote)
         self.update_output.emit(f"Запрос: {url}")
         self.update_progress.emit(10)
 
@@ -147,7 +150,11 @@ class LinkFinderWorker(QThread):
                 break
 
             params["pageNumber"] = str(page)
-            url = base_url + "?" + "&".join([f"{k}={v}" for k, v in params.items()])
+            # Формируем URL с учётом фильтра Росунимед
+            if self.rosunimed_only:
+                url = base_url + "?" + urllib.parse.urlencode(params, safe='', quote_via=urllib.parse.quote)
+            else:
+                url = base_url + "?" + urllib.parse.urlencode(params, safe=':', quote_via=urllib.parse.quote)
             self.driver.get(url)
             self.update_output.emit(f"Страница {page}/{total_pages}")
             self.update_progress.emit(20 + (page * 60 // total_pages))
