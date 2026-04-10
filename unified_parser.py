@@ -669,6 +669,8 @@ class UnifiedParserApp(QMainWindow):
         self.results_table.verticalHeader().setVisible(False)
         self.results_table.setAlternatingRowColors(True)
         self.results_table.setMinimumHeight(450)
+        # Подключаем сигнал для обработки кликов по ячейкам (для открытия ссылок)
+        self.results_table.cellDoubleClicked.connect(self.open_table_link)
         
         # Устанавливаем начальные ширины колонок
         for i in range(len(FIELD_ORDER)):
@@ -1002,8 +1004,23 @@ class UnifiedParserApp(QMainWindow):
         
         for col_idx, field_name in enumerate(FIELD_ORDER):
             value = row_data.get(field_name, "")
-            item = QTableWidgetItem(str(value) if value else "")
-            item.setFlags(item.flags() & ~Qt.ItemIsEditable)  # Только для чтения
+            
+            # Для колонки contract_link создаем кликабельную ссылку
+            if field_name == 'contract_link' and value:
+                item = QTableWidgetItem(value)
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)  # Только для чтения
+                # Делаем текст синим и подчеркнутым как hyperlink
+                font = item.font()
+                font.setUnderline(True)
+                font.setBold(True)
+                item.setFont(font)
+                item.setForeground(Qt.blue)
+                # Сохраняем URL в data role для открытия
+                item.setData(Qt.UserRole, value)
+            else:
+                item = QTableWidgetItem(str(value) if value else "")
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)  # Только для чтения
+            
             self.results_table.setItem(row_position, col_idx, item)
         
         # Автопрокрутка к новой строке
@@ -1044,9 +1061,22 @@ class UnifiedParserApp(QMainWindow):
             self.status_label.setText("Завершено без данных")
 
     def open_link(self, item):
-        """Открытие ссылки в браузере"""
+        """Открытие ссылки в браузере из списка links_list"""
         url = item.text()
         QDesktopServices.openUrl(QUrl(url))
+    
+    def open_table_link(self, row, column):
+        """Открытие ссылки из таблицы при двойном клике на ячейку contract_link"""
+        # Проверяем, что кликнули на колонку contract_link
+        contract_link_col = FIELD_ORDER.index('contract_link')
+        if column != contract_link_col:
+            return
+        
+        item = self.results_table.item(row, column)
+        if item:
+            url = item.data(Qt.UserRole)
+            if url:
+                QDesktopServices.openUrl(QUrl(url))
 
     def open_csv(self):
         """Открытие CSV файла"""

@@ -202,15 +202,20 @@ class EISParser:
                         }
                     }
                     
-                    // Поиск заказчика
+                    // Поиск заказчика - улучшенная логика
                     if (!customerName && text.includes('Заказчик')) {
-                        const lines = text.split('\\n');
+                        const lines = text.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
                         for (let i = 0; i < lines.length - 1; i++) {
-                            if (lines[i].includes('Заказчик')) {
-                                const candidate = lines[i + 1].trim();
-                                if (candidate && !candidate.startsWith('Заказчик:') && 
+                            const line = lines[i];
+                            // Проверяем, что строка содержит "Заказчик" как заголовок
+                            if (line.includes('Заказчик') && (line.endsWith(':') || line.match(/^Заказчик\\s*$/))) {
+                                const candidate = lines[i + 1];
+                                // Отфильтровываем служебные строки
+                                if (candidate && 
+                                    !candidate.startsWith('Заказчик:') && 
                                     !candidate.startsWith('Контракт:') && 
-                                    !candidate.startsWith('Реестровый номер:')) {
+                                    !candidate.startsWith('Реестровый номер:') &&
+                                    candidate.length > 5) {
                                     customerName = candidate;
                                     break;
                                 }
@@ -225,6 +230,49 @@ class EISParser:
             customer_name = metadata.get('customerName', '') or customer_name
         except Exception as e:
             logging.warning(f"Не удалось извлечь метаданные контракта: {e}")
+        
+        # Резервный способ извлечения заказчика через XPath
+        if not customer_name:
+            try:
+                customer_name = await page.evaluate('''() => {
+                    const xpath = "//span[contains(text(), 'Заказчик')]/following::span[1]";
+                    const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+                    if (result.singleNodeValue) {
+                        const text = result.singleNodeValue.textContent || "";
+                        return text.trim();
+                    }
+                    return "";
+                }''')
+            except Exception:
+                pass
+        
+        # Второй резервный способ - ищем в любом месте страницы
+        if not customer_name:
+            try:
+                customer_name = await page.evaluate('''() => {
+                    const allText = document.body.innerText;
+                    const lines = allText.split('\\n').map(l => l.trim()).filter(l => l.length > 0);
+                    
+                    for (let i = 0; i < lines.length - 1; i++) {
+                        const line = lines[i];
+                        // Ищем строку с "Заказчик:" в конце
+                        if (line.includes('Заказчик:') || line.match(/^Заказчик\\s*$/)) {
+                            const candidate = lines[i + 1];
+                            if (candidate && 
+                                !candidate.startsWith('Заказчик:') && 
+                                !candidate.startsWith('Контракт:') && 
+                                !candidate.startsWith('Реестровый номер:') &&
+                                candidate.length > 10 &&
+                                !candidate.includes('ИНН') && 
+                                !candidate.includes('КПП')) {
+                                return candidate;
+                            }
+                        }
+                    }
+                    return "";
+                }''')
+            except Exception:
+                pass
 
         await self._close_overlays(page)
         frame = await self._find_frame_with_objects(page)
