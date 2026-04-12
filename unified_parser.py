@@ -514,12 +514,9 @@ class UnifiedParserApp(QMainWindow):
 
         # Поисковый запрос
         search_label = QLabel("Поисковый запрос (МНН):")
-        self.search_input = QComboBox()
+        self.search_input = QLineEdit()
         self.search_input.setObjectName("search_input")
-        self.search_input.setEditable(True)
         self.search_input.setPlaceholderText('Введите МНН')
-        self.search_input.completer().setCompletionMode(QCompleter.PopupCompletion)
-        self.search_input.setInsertPolicy(QComboBox.NoInsert)
         main_tab_layout.addWidget(search_label)
         main_tab_layout.addWidget(self.search_input)
 
