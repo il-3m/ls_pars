@@ -103,6 +103,68 @@ logging.basicConfig(
 )
 
 
+class DatabaseLoaderWorker(QThread):
+    """Поток для загрузки базы данных МНН, формы выпуска и дозировки"""
+    finished = pyqtSignal(list, int)  # reference_data, rows_loaded
+    error = pyqtSignal(str)
+    
+    def __init__(self, file_path):
+        super().__init__()
+        self.file_path = file_path
+    
+    def run(self):
+        try:
+            if not OPENPYXL_AVAILABLE:
+                self.error.emit("Библиотека openpyxl не установлена")
+                return
+            
+            wb = openpyxl.load_workbook(self.file_path, read_only=True, data_only=True)
+            
+            # Ищем лист с именем, содержащим 'esklp'
+            sheet_name = None
+            for name in wb.sheetnames:
+                if 'esklp' in name.lower():
+                    sheet_name = name
+                    break
+            
+            if not sheet_name:
+                self.error.emit(f"Не найден лист с данными в файле.\nЛисты: {wb.sheetnames}")
+                wb.close()
+                return
+            
+            ws = wb[sheet_name]
+            
+            # Читаем данные начиная со строки 5
+            # Столбец A (1) - МНН, D (4) - Форма выпуска, I (9) - Дозировка
+            reference_data = []
+            rows_loaded = 0
+            
+            for row_idx in range(5, ws.max_row + 1):
+                mnn_val = ws.cell(row=row_idx, column=1).value
+                form_val = ws.cell(row=row_idx, column=4).value
+                dose_val = ws.cell(row=row_idx, column=9).value
+                
+                # Преобразуем в строки, обрабатывая None
+                mnn_str = str(mnn_val).strip() if mnn_val else ""
+                form_str = str(form_val).strip() if form_val else ""
+                dose_str = str(dose_val).strip() if dose_val else ""
+                
+                if mnn_str or form_str or dose_str:
+                    reference_data.append({
+                        'mnn': mnn_str,
+                        'release_form': form_str,
+                        'dose': dose_str
+                    })
+                    rows_loaded += 1
+            
+            wb.close()
+            self.finished.emit(reference_data, rows_loaded)
+            
+        except Exception as e:
+            logging.error(f"Ошибка загрузки базы данных: {e}", exc_info=True)
+            self.error.emit(str(e))
+
+
 class UnifiedParserWorker(QThread):
     """Поток для полного цикла: поиск ссылок + парсинг"""
     update_progress = pyqtSignal(int)
@@ -393,6 +455,7 @@ class UnifiedParserApp(QMainWindow):
         super().__init__()
         self.init_ui()
         self.thread = None
+        self.db_loader_thread = None  # Поток для загрузки базы данных
         self.all_rows = []
         self.filter_before_search = ""  # Фильтр МНН, установленный ДО поиска
         self.reference_data = []  # Список словарей {mnn, release_form, dose} из базы
@@ -1226,7 +1289,7 @@ class UnifiedParserApp(QMainWindow):
         )
 
     def load_reference_database(self):
-        """Загрузка базы данных МНН, формы выпуска и дозировки из файла esklp_smnn_*.xlsx"""
+        """Загрузка базы данных МНН, формы выпуска и дозировки из файла esklp_smnn_*.xlsx в отдельном потоке"""
         if not OPENPYXL_AVAILABLE:
             QMessageBox.critical(self, "Ошибка", "Библиотека openpyxl не установлена.\nУстановите: pip install openpyxl")
             return
@@ -1242,58 +1305,34 @@ class UnifiedParserApp(QMainWindow):
         if not file_path:
             return  # Пользователь отменил выбор
         
-        try:
-            self.append_log(f"Загрузка базы данных из: {file_path}")
-            wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
-            
-            # Ищем лист с именем, содержащим 'esklp'
-            sheet_name = None
-            for name in wb.sheetnames:
-                if 'esklp' in name.lower():
-                    sheet_name = name
-                    break
-            
-            if not sheet_name:
-                QMessageBox.critical(self, "Ошибка", f"Не найден лист с данными в файле.\nЛисты: {wb.sheetnames}")
-                return
-            
-            ws = wb[sheet_name]
-            
-            # Читаем данные начиная со строки 5
-            # Столбец A (1) - МНН, D (4) - Форма выпуска, I (9) - Дозировка
-            self.reference_data = []
-            rows_loaded = 0
-            
-            for row_idx in range(5, ws.max_row + 1):
-                mnn_val = ws.cell(row=row_idx, column=1).value
-                form_val = ws.cell(row=row_idx, column=4).value
-                dose_val = ws.cell(row=row_idx, column=9).value
-                
-                # Преобразуем в строки, обрабатывая None
-                mnn_str = str(mnn_val).strip() if mnn_val else ""
-                form_str = str(form_val).strip() if form_val else ""
-                dose_str = str(dose_val).strip() if dose_val else ""
-                
-                if mnn_str or form_str or dose_str:
-                    self.reference_data.append({
-                        'mnn': mnn_str,
-                        'release_form': form_str,
-                        'dose': dose_str
-                    })
-                    rows_loaded += 1
-            
-            wb.close()
-            
-            self.append_log(f"База данных загружена: {rows_loaded} записей")
-            QMessageBox.information(self, "Успех", 
-                f"База данных успешно загружена!\n"
-                f"Файл: {os.path.basename(file_path)}\n"
-                f"Записей: {rows_loaded}\n\n"
-                f"Данные будут использоваться для автозаполнения фильтров.")
-            
-        except Exception as e:
-            logging.error(f"Ошибка загрузки базы данных: {e}", exc_info=True)
-            QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить базу данных:\n{e}")
+        # Блокируем кнопку на время загрузки
+        self.load_db_button.setEnabled(False)
+        self.load_db_button.setText("ЗАГРУЗКА...")
+        self.append_log(f"Загрузка базы данных из: {file_path}")
+        
+        # Создаем и запускаем поток для загрузки
+        self.db_loader_thread = DatabaseLoaderWorker(file_path)
+        self.db_loader_thread.finished.connect(self.on_database_loaded)
+        self.db_loader_thread.error.connect(self.on_database_error)
+        self.db_loader_thread.start()
+    
+    def on_database_loaded(self, reference_data, rows_loaded):
+        """Обработка успешной загрузки базы данных"""
+        self.reference_data = reference_data
+        self.append_log(f"База данных загружена: {rows_loaded} записей")
+        QMessageBox.information(self, "Успех", 
+            f"База данных успешно загружена!\n"
+            f"Записей: {rows_loaded}\n\n"
+            f"Данные будут использоваться для фильтрации.")
+        self.load_db_button.setEnabled(True)
+        self.load_db_button.setText('ЗАГРУЗИТЬ БАЗУ ДАННЫХ (МНН, форма, дозировка)')
+    
+    def on_database_error(self, error_msg):
+        """Обработка ошибки загрузки базы данных"""
+        logging.error(f"Ошибка загрузки базы данных: {error_msg}")
+        QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить базу данных:\n{error_msg}")
+        self.load_db_button.setEnabled(True)
+        self.load_db_button.setText('ЗАГРУЗИТЬ БАЗУ ДАННЫХ (МНН, форма, дозировка)')
 
 
 def launch_gui():
