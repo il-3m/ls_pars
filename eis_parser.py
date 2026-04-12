@@ -673,10 +673,16 @@ def _looks_like_okpd2_code(text: str) -> bool:
 
 def _extract_dose(text: str) -> str:
     src = text or ""
-    unit = r"(?:МГ|МЛ|МКГ|ЕД|МЕ|Г)"
-    # Complex doses: 5 мг+10 мг, 0.400 мг+0.270 мг+6 мг+3.2 мг/мл
+    # Базовые единицы измерения
+    unit = r"(?:МГ|МЛ|МКГ|МГК|МГ/МЛ|МГ/Г|МГ/КГ|МГ/ДОЗА|МЛ/ДОЗА|МКГ/ДОЗА|МГ/КВ\.СМ|МГ/СУТ|ЕД|МЕ|КОЕ|ЕМД|Г|%)"
+    # Опциональный суффикс /<единица> для составных единиц измерения
+    per_unit = r"(?:\s*/\s*(?:МЛ|Г|КГ|Л|МКГ|МГ|ЕД|МЕ|ДОЗА|КВ\.СМ|СУТ))?"
+    # Полная единица измерения: МГ или МГ/МЛ или МЛ и т.д.
+    full_unit = rf"{unit}{per_unit}"
+    
+    # Паттерн 1: Сложные дозировки с полной единицей в каждой части (10 МГ/МЛ+1 МГ/МЛ)
     complex_pat = re.compile(
-        rf"((?:\d+[\.,]?\d*\s*{unit}\s*\+\s*)+\d+[\.,]?\d*\s*{unit}(?:\s*/\s*(?:МЛ|Г|КГ|Л|МКГ|МГ|ЕД|МЕ))?)",
+        rf"((?:\d+[\.,]?\d*\s*{full_unit}\s*\+\s*)+\d+[\.,]?\d*\s*{full_unit})",
         flags=re.IGNORECASE,
     )
     complex_matches = [
@@ -686,10 +692,23 @@ def _extract_dose(text: str) -> str:
     ]
     if complex_matches:
         return max(complex_matches, key=len)
-
+    
+    # Паттерн 2: Сложные дозировки с единицей только в конце (1500+500 мг, 0.72+5.75+2.7+0.36+0.05 мг/мл)
+    complex_suffix_pat = re.compile(
+        rf"((?:\d+[\.,]?\d*\s*\+\s*)+\d+[\.,]?\d*\s*{full_unit})",
+        flags=re.IGNORECASE,
+    )
+    complex_suffix_matches = [
+        _clean(m.group(1))
+        for m in complex_suffix_pat.finditer(src)
+        if m and _clean(m.group(1))
+    ]
+    if complex_suffix_matches:
+        return max(complex_suffix_matches, key=len)
+        
+    # Фоллбеки для простых дозировок
     patterns = [
-        r"(\d+[\.,]?\d*\s*(?:МГ|МЛ|МКГ|ЕД|МЕ|Г)\s*/\s*(?:МЛ|Г|КГ|Л|МКГ|МГ|ЕД|МЕ))",
-        r"(\d+[\.,]?\d*\s*(?:МГ|МЛ|МКГ|ЕД|МЕ|Г))\b",
+        rf"(\d+[\.,]?\d*\s*{full_unit})",
     ]
     for p in patterns:
         m = re.search(p, src, flags=re.IGNORECASE)
