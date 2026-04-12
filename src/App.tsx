@@ -115,7 +115,7 @@ export default function App() {
                   id="search-word"
                   value={searchWord}
                   onChange={(event) => setSearchWord(event.target.value)}
-                  className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none ring-cyan-300 transition focus:ring"
+                  className="w-full rounded border border-slate-700 bg-yellow-50 px-3 py-2 text-sm outline-none ring-cyan-300 transition focus:ring"
                   placeholder="азитромицин"
                 />
               </div>
@@ -142,7 +142,24 @@ export default function App() {
                 </label>
               </div>
               <div className="pt-4">
-                <button type="button" className="w-full rounded-md bg-cyan-500 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-cyan-600">
+                <label className="mb-1 block text-xs font-medium text-cyan-300" htmlFor="mnn-filter-sidebar">
+                  Фильтр по МНН
+                </label>
+                <input
+                  id="mnn-filter-sidebar"
+                  value={mnnFilter}
+                  onChange={(event) => setMnnFilter(event.target.value)}
+                  className="w-full rounded border border-slate-700 bg-yellow-50 px-3 py-2 text-sm outline-none ring-cyan-300 transition focus:ring"
+                  placeholder="введите МНН"
+                />
+              </div>
+              <div className="pt-2">
+                <button type="button" className="w-full rounded-md bg-slate-700 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-600">
+                  Фильтровать
+                </button>
+              </div>
+              <div className="pt-4">
+                <button type="button" className="w-full rounded-md bg-lime-300 px-4 py-2.5 text-sm font-medium text-slate-900 transition hover:bg-lime-400">
                   Запустить парсинг
                 </button>
               </div>
@@ -192,16 +209,20 @@ export default function App() {
         </aside>
 
         <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-900/60">
-          <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
-            <h2 className="text-sm font-medium text-cyan-300">Результаты парсинга</h2>
-            <div className="flex items-center gap-2">
+          <div className="border-b border-slate-800 px-4 py-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-medium text-cyan-300">Результаты парсинга</h2>
               <div className="flex items-center gap-2">
-                <label className="text-xs text-slate-400" htmlFor="mnn-filter">Фильтр МНН:</label>
-                <input id="mnn-filter" value={mnnFilter} onChange={(event) => setMnnFilter(event.target.value)} className="w-32 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs outline-none ring-cyan-300 transition focus:ring" placeholder="введите МНН" />
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-slate-400" htmlFor="mnn-filter">Фильтр МНН:</label>
+                  <input id="mnn-filter" value={mnnFilter} onChange={(event) => setMnnFilter(event.target.value)} className="w-32 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs outline-none ring-cyan-300 transition focus:ring" placeholder="введите МНН" />
+                </div>
+                <span className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-400">Найдено: {filteredRows.length} из {demoRows.length}</span>
               </div>
-              <span className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-400">Найдено: {filteredRows.length} из {demoRows.length}</span>
-              <button type="button" onClick={openExcel} className="rounded border border-green-500 px-3 py-1.5 text-xs font-medium text-green-400 transition hover:bg-green-500/10">
-                Открыть Excel
+            </div>
+            <div className="mt-3">
+              <button type="button" onClick={openExcel} className="w-40 rounded-md border border-green-500 px-3 py-2 text-sm font-medium text-green-400 transition hover:bg-green-500/10">
+                Выгрузить в excel
               </button>
             </div>
           </div>
