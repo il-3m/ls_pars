@@ -990,7 +990,7 @@ class UnifiedParserApp(QMainWindow):
 
     def start_parsing(self):
         """Запуск полного цикла парсинга"""
-        search_text = self.search_input.currentText().strip()
+        search_text = self.search_input.text().strip()
         if not search_text:
             QMessageBox.warning(self, "Внимание", "Введите поисковый запрос")
             return
@@ -1231,23 +1231,20 @@ class UnifiedParserApp(QMainWindow):
             QMessageBox.critical(self, "Ошибка", "Библиотека openpyxl не установлена.\nУстановите: pip install openpyxl")
             return
         
-        # Поиск файлов по маске esklp_smnn_*.xlsx в текущей директории
-        pattern = os.path.join(os.getcwd(), "esklp_smnn_*.xlsx")
-        files = glob.glob(pattern)
+        # Запрашиваем путь к файлу через диалог
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Выберите файл базы данных",
+            "",
+            "Excel файлы (*.xlsx);;Все файлы (*.*)"
+        )
         
-        if not files:
-            QMessageBox.warning(self, "Внимание", 
-                "Файлы базы данных не найдены.\n"
-                "Ожидаемый формат: esklp_smnn_YYYYMMDD.xlsx\n"
-                f"Папка поиска: {os.getcwd()}")
-            return
-        
-        # Берем последний файл (по имени, т.к. там есть дата)
-        latest_file = sorted(files)[-1]
+        if not file_path:
+            return  # Пользователь отменил выбор
         
         try:
-            self.append_log(f"Загрузка базы данных из: {latest_file}")
-            wb = openpyxl.load_workbook(latest_file, read_only=True, data_only=True)
+            self.append_log(f"Загрузка базы данных из: {file_path}")
+            wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
             
             # Ищем лист с именем, содержащим 'esklp'
             sheet_name = None
@@ -1290,7 +1287,7 @@ class UnifiedParserApp(QMainWindow):
             self.append_log(f"База данных загружена: {rows_loaded} записей")
             QMessageBox.information(self, "Успех", 
                 f"База данных успешно загружена!\n"
-                f"Файл: {os.path.basename(latest_file)}\n"
+                f"Файл: {os.path.basename(file_path)}\n"
                 f"Записей: {rows_loaded}\n\n"
                 f"Данные будут использоваться для автозаполнения фильтров.")
             
