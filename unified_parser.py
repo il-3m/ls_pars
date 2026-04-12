@@ -410,6 +410,9 @@ class UnifiedParserApp(QMainWindow):
                 border: 1px solid #999999; 
                 background-color: white;
             }
+            QLineEdit#search_input, QLineEdit#filter_result_input, QComboBox#search_input {
+                background-color: #FFFDE7;
+            }
             QLineEdit:focus, QDateEdit:focus, QComboBox:focus {
                 border: 1px solid #000000;
             }
@@ -504,6 +507,7 @@ class UnifiedParserApp(QMainWindow):
         # Поисковый запрос
         search_label = QLabel("Поисковый запрос (МНН):")
         self.search_input = QComboBox()
+        self.search_input.setObjectName("search_input")
         self.search_input.setEditable(True)
         self.search_input.setPlaceholderText('Введите МНН')
         self.search_input.completer().setCompletionMode(QCompleter.PopupCompletion)
@@ -553,9 +557,27 @@ class UnifiedParserApp(QMainWindow):
         filter_group.setLayout(filter_layout)
         main_tab_layout.addWidget(filter_group)
 
-        # Кнопка запуска
+        # Фильтр по МНН (под фильтрами)
+        filter_result_label = QLabel("Фильтр по МНН:")
+        self.filter_result_input = QLineEdit()
+        self.filter_result_input.setObjectName("filter_result_input")
+        self.filter_result_input.setPlaceholderText('Введите текст для фильтрации')
+        main_tab_layout.addWidget(filter_result_label)
+        main_tab_layout.addWidget(self.filter_result_input)
+
+        # Кнопка "Фильтровать" (под полем Фильтр по МНН)
+        self.filter_button = QPushButton('ФИЛЬТРОВАТЬ')
+        self.filter_button.setMinimumHeight(30)
+        self.filter_button.clicked.connect(self.apply_filter)
+        main_tab_layout.addWidget(self.filter_button)
+
+        # Небольшой отступ перед кнопкой "Запустить"
+        main_tab_layout.addSpacing(8)
+
+        # Кнопка запуска (светло-салатовый цвет)
         self.start_button = QPushButton('ЗАПУСТИТЬ')
         self.start_button.setMinimumHeight(35)
+        self.start_button.setStyleSheet("background-color: #C8E6C9;")
         self.start_button.clicked.connect(self.start_parsing)
         main_tab_layout.addWidget(self.start_button)
 
@@ -571,29 +593,6 @@ class UnifiedParserApp(QMainWindow):
         self.progress_bar.setValue(0)
         self.progress_bar.setMinimumHeight(18)
         main_tab_layout.addWidget(self.progress_bar)
-
-        # Кнопка выгрузки в Excel
-        self.export_excel_button = QPushButton('ВЫГРУЗИТЬ В EXCEL')
-        self.export_excel_button.setMinimumHeight(35)
-        self.export_excel_button.clicked.connect(self.export_to_excel)
-        main_tab_layout.addWidget(self.export_excel_button)
-
-        # Фильтр результатов
-        filter_result_label = QLabel("Фильтр по МНН:")
-        self.filter_result_input = QLineEdit()
-        self.filter_result_input.setPlaceholderText('Введите текст для фильтрации')
-        
-        # Кнопка "Фильтровать"
-        filter_button_layout = QHBoxLayout()
-        filter_button_layout.setSpacing(6)
-        self.filter_button = QPushButton('ФИЛЬТРОВАТЬ')
-        self.filter_button.setMinimumHeight(30)
-        self.filter_button.clicked.connect(self.apply_filter)
-        filter_button_layout.addWidget(self.filter_result_input, 1)
-        filter_button_layout.addWidget(self.filter_button)
-        
-        main_tab_layout.addWidget(filter_result_label)
-        main_tab_layout.addLayout(filter_button_layout)
 
         main_tab_layout.addStretch()
         main_tab.setLayout(main_tab_layout)
@@ -664,6 +663,12 @@ class UnifiedParserApp(QMainWindow):
         stats_layout.addWidget(self.total_rows_label)
         stats_group.setLayout(stats_layout)
         left_layout.addWidget(stats_group)
+
+        # Кнопка выгрузки в Excel (под блоком Статистика)
+        self.export_excel_button = QPushButton('ВЫГРУЗИТЬ В EXCEL')
+        self.export_excel_button.setMinimumHeight(35)
+        self.export_excel_button.clicked.connect(self.export_to_excel)
+        left_layout.addWidget(self.export_excel_button)
 
         # Кнопки действий
         actions_layout = QHBoxLayout()
