@@ -55,6 +55,7 @@ import asyncio
 import csv
 import re
 import threading
+import glob
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict
@@ -86,6 +87,12 @@ from eis_parser import (
     FIELD_ORDER, EXPORT_HEADERS_RU, ParseRecord, EISParser,
     export_csv, export_xlsx, _clean, build_arg_parser
 )
+
+try:
+    import openpyxl
+    OPENPYXL_AVAILABLE = True
+except ImportError:
+    OPENPYXL_AVAILABLE = False
 
 # Настройка логирования
 logging.basicConfig(
@@ -388,6 +395,7 @@ class UnifiedParserApp(QMainWindow):
         self.thread = None
         self.all_rows = []
         self.filter_before_search = ""  # Фильтр МНН, установленный ДО поиска
+        self.reference_data = []  # Список словарей {mnn, release_form, dose} из базы
 
     def init_ui(self):
         """Инициализация интерфейса"""
@@ -565,11 +573,33 @@ class UnifiedParserApp(QMainWindow):
         main_tab_layout.addWidget(filter_result_label)
         main_tab_layout.addWidget(self.filter_result_input)
 
-        # Кнопка "Фильтровать" (под полем Фильтр по МНН)
+        # Фильтр по форме выпуска
+        filter_form_label = QLabel("Фильтр по форме выпуска:")
+        self.filter_form_input = QLineEdit()
+        self.filter_form_input.setObjectName("filter_form_input")
+        self.filter_form_input.setPlaceholderText('Введите текст для фильтрации')
+        main_tab_layout.addWidget(filter_form_label)
+        main_tab_layout.addWidget(self.filter_form_input)
+
+        # Фильтр по дозировке
+        filter_dose_label = QLabel("Фильтр по дозировке:")
+        self.filter_dose_input = QLineEdit()
+        self.filter_dose_input.setObjectName("filter_dose_input")
+        self.filter_dose_input.setPlaceholderText('Введите текст для фильтрации')
+        main_tab_layout.addWidget(filter_dose_label)
+        main_tab_layout.addWidget(self.filter_dose_input)
+
+        # Кнопка "Фильтровать" (под полями фильтров)
         self.filter_button = QPushButton('ФИЛЬТРОВАТЬ')
         self.filter_button.setMinimumHeight(30)
         self.filter_button.clicked.connect(self.apply_filter)
         main_tab_layout.addWidget(self.filter_button)
+
+        # Кнопка загрузки базы данных
+        self.load_db_button = QPushButton('ЗАГРУЗИТЬ БАЗУ ДАННЫХ (МНН, форма, дозировка)')
+        self.load_db_button.setMinimumHeight(30)
+        self.load_db_button.clicked.connect(self.load_reference_database)
+        main_tab_layout.addWidget(self.load_db_button)
 
         # Небольшой отступ перед кнопкой "Запустить"
         main_tab_layout.addSpacing(8)
@@ -805,34 +835,55 @@ class UnifiedParserApp(QMainWindow):
             self.region_checkbox.setChecked(False)
 
     def apply_filter(self):
-        """Фильтрация таблицы по тексту в колонке МНН (ГРЛС) по кнопке"""
-        filter_text = self.filter_result_input.text().strip().lower()
+        """Фильтрация таблицы по тексту в колонке МНН, форма выпуска и дозировка по кнопке"""
+        filter_mnn = self.filter_result_input.text().strip().lower()
+        filter_form = self.filter_form_input.text().strip().lower()
+        filter_dose = self.filter_dose_input.text().strip().lower()
         
-        # Находим индекс колонки МНН (ГРЛС) - в FIELD_ORDER это 'mnn'
+        # Находим индексы колонок
         mnn_column_index = -1
+        form_column_index = -1
+        dose_column_index = -1
         for i, field_name in enumerate(FIELD_ORDER):
             if field_name == 'mnn':
                 mnn_column_index = i
-                break
+            elif field_name == 'release_form':
+                form_column_index = i
+            elif field_name == 'dose':
+                dose_column_index = i
         
-        if mnn_column_index == -1:
+        if mnn_column_index == -1 or form_column_index == -1 or dose_column_index == -1:
             return
         
         # Проходим по всем строкам и скрываем/показываем
         for row in range(self.results_table.rowCount()):
-            item = self.results_table.item(row, mnn_column_index)
-            cell_text = item.text().lower() if item else ""
+            mnn_item = self.results_table.item(row, mnn_column_index)
+            form_item = self.results_table.item(row, form_column_index)
+            dose_item = self.results_table.item(row, dose_column_index)
             
-            if not filter_text or filter_text in cell_text:
+            mnn_text = mnn_item.text().lower() if mnn_item else ""
+            form_text = form_item.text().lower() if form_item else ""
+            dose_text = dose_item.text().lower() if dose_item else ""
+            
+            # Проверяем все три фильтра (если фильтр пустой - игнорируем)
+            mnn_match = not filter_mnn or filter_mnn in mnn_text
+            form_match = not filter_form or filter_form in form_text
+            dose_match = not filter_dose or filter_dose in dose_text
+            
+            if mnn_match and form_match and dose_match:
                 self.results_table.setRowHidden(row, False)
             else:
                 self.results_table.setRowHidden(row, True)
         
         # Обновляем filter_before_search для последующего добавления строк
-        self.filter_before_search = self.filter_result_input.text().strip()
+        self.filter_before_search = {
+            'mnn': self.filter_result_input.text().strip(),
+            'form': self.filter_form_input.text().strip(),
+            'dose': self.filter_dose_input.text().strip()
+        }
 
     def filter_table(self, filter_text):
-        """Фильтрация таблицы по тексту в колонке МНН (ГРЛС)"""
+        """Фильтрация таблицы по тексту в колонке МНН (ГРЛС) - устаревший метод"""
         filter_text = filter_text.strip().lower()
         
         # Находим индекс колонки МНН (ГРЛС) - в FIELD_ORDER это 'mnn'
@@ -881,8 +932,10 @@ class UnifiedParserApp(QMainWindow):
             self.all_rows = []
             # Сбрасываем фильтр
             self.filter_before_search = ""
-            # Очищаем поле фильтра
+            # Очищаем поля фильтров
             self.filter_result_input.clear()
+            self.filter_form_input.clear()
+            self.filter_dose_input.clear()
             # Обновляем статус
             self.status_label.setText("Данные сброшены")
             self.append_log("=== ДАННЫЕ СБРОШЕНЫ ПОЛЬЗОВАТЕЛЕМ ===")
@@ -945,8 +998,12 @@ class UnifiedParserApp(QMainWindow):
             QMessageBox.warning(self, "Внимание", "Введите поисковый запрос")
             return
 
-        # Сохраняем значение фильтра МНН ДО поиска
-        self.filter_before_search = self.filter_result_input.text().strip()
+        # Сохраняем значение фильтров ДО поиска
+        self.filter_before_search = {
+            'mnn': self.filter_result_input.text().strip(),
+            'form': self.filter_form_input.text().strip(),
+            'dose': self.filter_dose_input.text().strip()
+        }
 
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
@@ -957,8 +1014,12 @@ class UnifiedParserApp(QMainWindow):
         
         self.append_log("=== ЗАПУСК ПОЛНОГО ЦИКЛА ===")
         self.append_log(f"Поисковый запрос: {search_text}")
-        if self.filter_before_search:
-            self.append_log(f"Фильтр МНН (до поиска): {self.filter_before_search}")
+        if self.filter_before_search['mnn']:
+            self.append_log(f"Фильтр МНН (до поиска): {self.filter_before_search['mnn']}")
+        if self.filter_before_search['form']:
+            self.append_log(f"Фильтр формы выпуска (до поиска): {self.filter_before_search['form']}")
+        if self.filter_before_search['dose']:
+            self.append_log(f"Фильтр дозировки (до поиска): {self.filter_before_search['dose']}")
         
         date_from = self.date_from.date().toString("dd.MM.yyyy")
         date_to = self.date_to.date().toString("dd.MM.yyyy")
@@ -1030,10 +1091,29 @@ class UnifiedParserApp(QMainWindow):
         """Добавление строки данных в таблицу результатов"""
         # Если был установлен фильтр (до поиска или после), проверяем соответствие
         if self.filter_before_search:
-            mnn_value = row_data.get('mnn', '').lower()
-            if self.filter_before_search.lower() not in mnn_value:
-                # Пропускаем строку, не соответствующую фильтру
-                return
+            # filter_before_search может быть строкой (старый формат) или словарем (новый формат)
+            if isinstance(self.filter_before_search, str):
+                # Старый формат - только МНН
+                mnn_value = row_data.get('mnn', '').lower()
+                if self.filter_before_search.lower() not in mnn_value:
+                    return
+            elif isinstance(self.filter_before_search, dict):
+                # Новый формат - словарь с фильтрами по МНН, форме и дозировке
+                mnn_value = row_data.get('mnn', '').lower()
+                form_value = row_data.get('release_form', '').lower()
+                dose_value = row_data.get('dose', '').lower()
+                
+                filter_mnn = self.filter_before_search.get('mnn', '').lower()
+                filter_form = self.filter_before_search.get('form', '').lower()
+                filter_dose = self.filter_before_search.get('dose', '').lower()
+                
+                # Проверяем все три фильтра (если фильтр пустой - игнорируем)
+                mnn_match = not filter_mnn or filter_mnn in mnn_value
+                form_match = not filter_form or filter_form in form_value
+                dose_match = not filter_dose or filter_dose in dose_value
+                
+                if not (mnn_match and form_match and dose_match):
+                    return
         
         row_position = self.results_table.rowCount()
         self.results_table.insertRow(row_position)
@@ -1147,6 +1227,79 @@ class UnifiedParserApp(QMainWindow):
             "Объединяет поиск ссылок и парсинг данных\n"
             "в едином цикле с накоплением результатов."
         )
+
+    def load_reference_database(self):
+        """Загрузка базы данных МНН, формы выпуска и дозировки из файла esklp_smnn_*.xlsx"""
+        if not OPENPYXL_AVAILABLE:
+            QMessageBox.critical(self, "Ошибка", "Библиотека openpyxl не установлена.\nУстановите: pip install openpyxl")
+            return
+        
+        # Поиск файлов по маске esklp_smnn_*.xlsx в текущей директории
+        pattern = os.path.join(os.getcwd(), "esklp_smnn_*.xlsx")
+        files = glob.glob(pattern)
+        
+        if not files:
+            QMessageBox.warning(self, "Внимание", 
+                "Файлы базы данных не найдены.\n"
+                "Ожидаемый формат: esklp_smnn_YYYYMMDD.xlsx\n"
+                f"Папка поиска: {os.getcwd()}")
+            return
+        
+        # Берем последний файл (по имени, т.к. там есть дата)
+        latest_file = sorted(files)[-1]
+        
+        try:
+            self.append_log(f"Загрузка базы данных из: {latest_file}")
+            wb = openpyxl.load_workbook(latest_file, read_only=True, data_only=True)
+            
+            # Ищем лист с именем, содержащим 'esklp'
+            sheet_name = None
+            for name in wb.sheetnames:
+                if 'esklp' in name.lower():
+                    sheet_name = name
+                    break
+            
+            if not sheet_name:
+                QMessageBox.critical(self, "Ошибка", f"Не найден лист с данными в файле.\nЛисты: {wb.sheetnames}")
+                return
+            
+            ws = wb[sheet_name]
+            
+            # Читаем данные начиная со строки 5
+            # Столбец A (1) - МНН, D (4) - Форма выпуска, I (9) - Дозировка
+            self.reference_data = []
+            rows_loaded = 0
+            
+            for row_idx in range(5, ws.max_row + 1):
+                mnn_val = ws.cell(row=row_idx, column=1).value
+                form_val = ws.cell(row=row_idx, column=4).value
+                dose_val = ws.cell(row=row_idx, column=9).value
+                
+                # Преобразуем в строки, обрабатывая None
+                mnn_str = str(mnn_val).strip() if mnn_val else ""
+                form_str = str(form_val).strip() if form_val else ""
+                dose_str = str(dose_val).strip() if dose_val else ""
+                
+                if mnn_str or form_str or dose_str:
+                    self.reference_data.append({
+                        'mnn': mnn_str,
+                        'release_form': form_str,
+                        'dose': dose_str
+                    })
+                    rows_loaded += 1
+            
+            wb.close()
+            
+            self.append_log(f"База данных загружена: {rows_loaded} записей")
+            QMessageBox.information(self, "Успех", 
+                f"База данных успешно загружена!\n"
+                f"Файл: {os.path.basename(latest_file)}\n"
+                f"Записей: {rows_loaded}\n\n"
+                f"Данные будут использоваться для автозаполнения фильтров.")
+            
+        except Exception as e:
+            logging.error(f"Ошибка загрузки базы данных: {e}", exc_info=True)
+            QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить базу данных:\n{e}")
 
 
 def launch_gui():

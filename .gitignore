@@ -1,1 +1,4 @@
-(unified_parser.py is a source file, so no ignores needed)
+```
+__pycache__/
+*.pyc
+```
