@@ -481,7 +481,7 @@ class UnifiedParserApp(QMainWindow):
                 border: 1px solid #999999; 
                 background-color: white;
             }
-            QLineEdit#search_input, QLineEdit#filter_result_input, QComboBox#search_input {
+            QLineEdit#search_input, QLineEdit#filter_result_input, QLineEdit#filter_form_input, QLineEdit#filter_dose_input, QComboBox#search_input {
                 background-color: #FFFDE7;
             }
             QLineEdit:focus, QDateEdit:focus, QComboBox:focus {
@@ -1311,9 +1311,15 @@ class UnifiedParserApp(QMainWindow):
         self.append_log(f"Загрузка базы данных из: {file_path}")
         
         # Создаем и запускаем поток для загрузки
+        # Важно: сохраняем ссылку на поток, чтобы он не был уничтожен сборщиком мусора
         self.db_loader_thread = DatabaseLoaderWorker(file_path)
         self.db_loader_thread.finished.connect(self.on_database_loaded)
         self.db_loader_thread.error.connect(self.on_database_error)
+        # Добавляем обработчик завершения для разблокировки кнопки (на случай ошибки)
+        self.db_loader_thread.finished.connect(lambda: self.load_db_button.setEnabled(True))
+        self.db_loader_thread.finished.connect(lambda: self.load_db_button.setText('ЗАГРУЗИТЬ БАЗУ ДАННЫХ (МНН, форма, дозировка)'))
+        self.db_loader_thread.error.connect(lambda: self.load_db_button.setEnabled(True))
+        self.db_loader_thread.error.connect(lambda: self.load_db_button.setText('ЗАГРУЗИТЬ БАЗУ ДАННЫХ (МНН, форма, дозировка)'))
         self.db_loader_thread.start()
     
     def on_database_loaded(self, reference_data, rows_loaded):
@@ -1324,15 +1330,13 @@ class UnifiedParserApp(QMainWindow):
             f"База данных успешно загружена!\n"
             f"Записей: {rows_loaded}\n\n"
             f"Данные будут использоваться для фильтрации.")
-        self.load_db_button.setEnabled(True)
-        self.load_db_button.setText('ЗАГРУЗИТЬ БАЗУ ДАННЫХ (МНН, форма, дозировка)')
+        # Кнопка будет разблокирована через connected сигналы
     
     def on_database_error(self, error_msg):
         """Обработка ошибки загрузки базы данных"""
         logging.error(f"Ошибка загрузки базы данных: {error_msg}")
         QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить базу данных:\n{error_msg}")
-        self.load_db_button.setEnabled(True)
-        self.load_db_button.setText('ЗАГРУЗИТЬ БАЗУ ДАННЫХ (МНН, форма, дозировка)')
+        # Кнопка будет разблокирована через connected сигналы
 
 
 def launch_gui():
