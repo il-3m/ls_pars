@@ -15,34 +15,64 @@ import os
 import urllib.parse
 import tempfile
 import shutil
+import logging
 
-# Configure Playwright to use bundled browsers when running as EXE
-def setup_playwright_bundle():
-    """Setup Playwright to find browsers - auto-install if needed for EXE"""
+# ============================================================================
+# КРИТИЧЕСКИ ВАЖНО: Настройка путей для работы из-под PyInstaller EXE
+# ============================================================================
+
+def get_resource_path(relative_path):
+    """
+    Получить абсолютный путь к ресурсу.
+    Работает как для обычного режима, так и для PyInstaller (onefile/onedir).
+    """
     if getattr(sys, 'frozen', False):
-        # Running as compiled EXE
-        application_path = os.path.dirname(sys.executable)
-        # Check if we're in a temporary folder (PyInstaller one-file mode)
+        # Запущено из-под PyInstaller
         if hasattr(sys, '_MEIPASS'):
-            application_path = sys._MEIPASS
-        
-        # For EXE: use permanent browser installation in user's home directory
-        # This avoids the issue of browsers not being found in temp _MEIxxxx folders
+            # onefile режим - распаковано во временную папку
+            base_path = sys._MEIPASS
+        else:
+            # onedir режим - рядом с exe файлом
+            base_path = os.path.dirname(sys.executable)
+    else:
+        # Обычный запуск из Python
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    
+    return os.path.join(base_path, relative_path)
+
+
+def setup_playwright_for_exe():
+    """
+    Настроить Playwright для работы из-под EXE.
+    Ключевая проблема: в режиме onefile браузеры должны быть в постоянном месте,
+    а не во временной папке _MEIxxxxx.
+    """
+    if getattr(sys, 'frozen', False):
+        # Мы запущены как EXE
         home_dir = os.path.expanduser("~")
         pw_cache_dir = os.path.join(home_dir, '.cache', 'ms-playwright')
         
-        # Set environment variable for Playwright to find browsers
+        # Устанавливаем переменную окружения ДО импорта playwright
         os.environ['PLAYWRIGHT_BROWSERS_PATH'] = pw_cache_dir
         
-        # Also try bundled path if it exists (for future multi-folder EXE builds)
-        pw_bundle_path = os.path.join(application_path, 'playwright', 'driver')
-        if os.path.exists(pw_bundle_path):
-            # Prefer bundled path if available
-            os.environ['PLAYWRIGHT_BROWSERS_PATH'] = pw_bundle_path
+        # Также устанавливаем PLAYWRIGHT_DRIVER_PATH для надёжности
+        pw_driver_path = os.path.join(pw_cache_dir, 'chromium-*', 'chrome-linux', 'chrome')
+        if not os.path.exists(pw_driver_path.replace('*', '999999')):  # Проверка для Windows
+            pw_driver_path = os.path.join(pw_cache_dir, 'chromium-*', 'chrome-win', 'chrome.exe')
         
-        logging.info(f"Playwright browsers path set to: {os.environ.get('PLAYWRIGHT_BROWSERS_PATH', 'default')}")
+        logging.info(f"[EXE MODE] Playwright browsers path: {pw_cache_dir}")
+        logging.info(f"[EXE MODE] Если браузеров нет в кэше, они будут загружены при первом запуске.")
+        
+        return pw_cache_dir
+    else:
+        # Обычный режим - используем стандартный кэш
+        return None
 
-setup_playwright_bundle()
+
+# Настраиваем Playwright ДО импорта playwright.async_api
+pw_cache_path = setup_playwright_for_exe()
+
+# ============================================================================
 
 # Mock tkinter if not available (for headless environments)
 try:
@@ -112,11 +142,49 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 from playwright.async_api import Browser, BrowserContext, Error, Frame, Page, async_playwright
 
-# Import parsing logic from eis_parser
-from eis_parser import (
-    FIELD_ORDER, EXPORT_HEADERS_RU, ParseRecord, EISParser,
-    export_csv, export_xlsx, _clean, build_arg_parser
-)
+# ============================================================================
+# ИМПОРТ МОДУЛЕЙ С УЧЁТОМ PYINSTALLER
+# ============================================================================
+
+def import_module_from_exe(module_name):
+    """
+    Импорт модуля с учётом работы из-под PyInstaller.
+    В режиме EXE модули находятся в _MEIPASS или рядом с exe.
+    """
+    try:
+        # Пробуем обычный импорт
+        return __import__(module_name)
+    except ImportError:
+        # Если не удалось, пробуем найти модуль вручную
+        if getattr(sys, 'frozen', False):
+            if hasattr(sys, '_MEIPASS'):
+                search_path = sys._MEIPASS
+            else:
+                search_path = os.path.dirname(sys.executable)
+            
+            module_file = os.path.join(search_path, f"{module_name}.py")
+            if os.path.exists(module_file):
+                import importlib.util
+                spec = importlib.util.spec_from_file_location(module_name, module_file)
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                return module
+        
+        # Если всё ещё не нашли, пробрасываем ошибку
+        raise
+
+# Импортируем eis_parser и link_finder
+eis_parser = import_module_from_exe('eis_parser')
+
+# Извлекаем необходимые компоненты из модуля
+FIELD_ORDER = eis_parser.FIELD_ORDER
+EXPORT_HEADERS_RU = eis_parser.EXPORT_HEADERS_RU
+ParseRecord = eis_parser.ParseRecord
+EISParser = eis_parser.EISParser
+export_csv = eis_parser.export_csv
+export_xlsx = eis_parser.export_xlsx
+_clean = eis_parser._clean
+build_arg_parser = eis_parser.build_arg_parser
 
 try:
     import openpyxl
