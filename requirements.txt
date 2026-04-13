@@ -6,3 +6,6 @@ openpyxl==3.1.2
 requests==2.31.0
 playwright==1.40.0
 pyinstaller==6.3.0
+
+# NOTE: For Python 3.13+, use pre-built wheels only.
+# If build fails, try: pip install pandas --only-binary :all:

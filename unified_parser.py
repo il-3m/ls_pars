@@ -18,7 +18,7 @@ import shutil
 
 # Configure Playwright to use bundled browsers when running as EXE
 def setup_playwright_bundle():
-    """Setup Playwright to find browsers in the EXE bundle"""
+    """Setup Playwright to find browsers - auto-install if needed for EXE"""
     if getattr(sys, 'frozen', False):
         # Running as compiled EXE
         application_path = os.path.dirname(sys.executable)
@@ -26,13 +26,22 @@ def setup_playwright_bundle():
         if hasattr(sys, '_MEIPASS'):
             application_path = sys._MEIPASS
         
+        # For EXE: use permanent browser installation in user's home directory
+        # This avoids the issue of browsers not being found in temp _MEIxxxx folders
+        home_dir = os.path.expanduser("~")
+        pw_cache_dir = os.path.join(home_dir, '.cache', 'ms-playwright')
+        
+        # Set environment variable for Playwright to find browsers
+        os.environ['PLAYWRIGHT_BROWSERS_PATH'] = pw_cache_dir
+        
+        # Also try bundled path if it exists (for future multi-folder EXE builds)
         pw_bundle_path = os.path.join(application_path, 'playwright', 'driver')
         if os.path.exists(pw_bundle_path):
-            # Set environment variable for Playwright to find browsers
+            # Prefer bundled path if available
             os.environ['PLAYWRIGHT_BROWSERS_PATH'] = pw_bundle_path
-            # Also set PLAYWRIGHT_DRIVER_PATH for older versions
-            os.environ['PLAYWRIGHT_DRIVER_PATH'] = pw_bundle_path
-            
+        
+        logging.info(f"Playwright browsers path set to: {os.environ.get('PLAYWRIGHT_BROWSERS_PATH', 'default')}")
+
 setup_playwright_bundle()
 
 # Mock tkinter if not available (for headless environments)
@@ -438,22 +447,30 @@ class UnifiedParserWorker(QThread):
         archive_dir = Path(self.archive_dir)
         
         async def parse_batch():
-            # Set browser executable path for bundled browsers in EXE
+            # For EXE: use permanent browser installation in user's home directory
+            # Playwright will auto-install browsers on first run if not found
             browser_executable = None
-            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-                pw_bundle_path = os.path.join(sys._MEIPASS, 'playwright', 'driver')
-                if os.path.exists(pw_bundle_path):
-                    # Find chromium executable in the bundle
-                    import glob
-                    chromium_paths = glob.glob(os.path.join(pw_bundle_path, 'chromium-*', 'chrome.exe'))
-                    if chromium_paths:
-                        browser_executable = chromium_paths[0]
             
             async with async_playwright() as p:
                 launch_args = {'headless': not self.headed}
                 if browser_executable:
                     launch_args['executable_path'] = browser_executable
-                browser: Browser = await p.chromium.launch(**launch_args)
+                try:
+                    browser: Browser = await p.chromium.launch(**launch_args)
+                except Exception as e:
+                    # If browser not found, provide helpful error message
+                    error_msg = str(e)
+                    if "Executable doesn't exist" in error_msg or "playwright install" in error_msg.lower():
+                        self.update_output.emit("ОШИБКА: Браузер Chromium не найден!")
+                        self.update_output.emit("При первом запуске необходимо установить браузеры Playwright.")
+                        self.update_output.emit("Откройте командную строку и выполните:")
+                        self.update_output.emit("  python -m playwright install chromium")
+                        self.update_output.emit("Или переустановите программу.")
+                        logging.error(f"Playwright browser not found: {error_msg}")
+                        raise
+                    else:
+                        raise
+                
                 context: BrowserContext = await browser.new_context(locale="ru-RU")
                 
                 for idx, link_tuple in enumerate(links, start=1):

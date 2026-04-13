@@ -8,31 +8,38 @@ __pycache__/
 venv/
 .env
 .env.local
-*.env.*
+.env.*
 
 # Build artifacts
 dist/
 build/
-*.egg-info/
+*.exe
+*.dll
+*.so
+*.a
+*.o
+*.obj
+*.out
 
 # Logs and temp files
 *.log
 *.tmp
+*.swp
 
 # Editors
 .vscode/
 .idea/
-*.swp
-*.swo
 
-# Coverage reports
+# Coverage
 .coverage
 coverage/
 htmlcov/
 
-# Testing
-.pytest_cache/
+# MyPy
 .mypy_cache/
+
+# Pytest
+.pytest_cache/
 
 # OS
 .DS_Store

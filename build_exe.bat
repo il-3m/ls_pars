@@ -31,10 +31,11 @@ if exist *.spec del /q *.spec
 
 echo.
 echo [3/4] Installing Playwright browsers...
+echo This will download Chromium browser (~150MB). Please wait...
 python -m playwright install chromium
 if errorlevel 1 (
     echo WARNING: Failed to install Playwright browsers automatically.
-    echo After EXE installation, manually run: python -m playwright install chromium
+    echo The EXE will install them on first run.
 )
 
 echo.
@@ -76,9 +77,11 @@ echo.
 echo EXE file created in: export\Unified_Parser.exe
 echo.
 echo IMPORTANT: For the parser to work on the target computer you need:
-echo 1. Google Chrome browser installed
+echo 1. Google Chrome browser installed (for Selenium part)
 echo 2. Internet access
-echo 3. Playwright browsers (Chromium) are already included in EXE
+echo 3. At FIRST RUN, Playwright will auto-install Chromium browser
+echo    This takes 1-2 minutes and requires internet connection.
+echo    Subsequent runs will be faster.
 echo.
 echo You can transfer this file to any Windows 10/11 computer
 echo and run it without Python installed.
