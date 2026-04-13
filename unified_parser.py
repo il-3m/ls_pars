@@ -666,10 +666,6 @@ class UnifiedParserApp(QMainWindow):
         self.filter_form_input.setObjectName("filter_form_input")
         self.filter_form_input.setPlaceholderText('Введите текст для фильтрации')
         self.filter_form_input.setInsertPolicy(QComboBox.NoInsert)
-        # Создаем completer для формы выпуска
-        self.filter_form_completer = QCompleter()
-        self.filter_form_completer.setCompletionMode(QCompleter.PopupCompletion)
-        self.filter_form_input.setCompleter(self.filter_form_completer)
         main_tab_layout.addWidget(filter_form_label)
         main_tab_layout.addWidget(self.filter_form_input)
 
@@ -680,10 +676,6 @@ class UnifiedParserApp(QMainWindow):
         self.filter_dose_input.setObjectName("filter_dose_input")
         self.filter_dose_input.setPlaceholderText('Введите текст для фильтрации')
         self.filter_dose_input.setInsertPolicy(QComboBox.NoInsert)
-        # Создаем completer для дозировки
-        self.filter_dose_completer = QCompleter()
-        self.filter_dose_completer.setCompletionMode(QCompleter.PopupCompletion)
-        self.filter_dose_input.setCompleter(self.filter_dose_completer)
         main_tab_layout.addWidget(filter_dose_label)
         main_tab_layout.addWidget(self.filter_dose_input)
 
@@ -1451,13 +1443,13 @@ class UnifiedParserApp(QMainWindow):
         """Обновление списков форм выпуска и дозировок для выбранного МНН"""
         # Обновляем список форм выпуска
         forms = self.forms_for_mnn.get(mnn, [])
-        forms_model = QStringListModel(forms)
-        self.filter_form_completer.setModel(forms_model)
+        self.filter_form_input.clear()
+        self.filter_form_input.addItems(forms)
         
         # Обновляем список дозировок
         doses = self.doses_for_mnn.get(mnn, [])
-        doses_model = QStringListModel(doses)
-        self.filter_dose_completer.setModel(doses_model)
+        self.filter_dose_input.clear()
+        self.filter_dose_input.addItems(doses)
 
 
 def launch_gui():
