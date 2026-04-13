@@ -503,12 +503,8 @@ class UnifiedParserApp(QMainWindow):
                 border: 1px solid #999999; 
                 background-color: white;
             }
-            QLineEdit#search_input, QComboBox#search_input, QComboBox#filter_result_input, QComboBox#filter_form_input, QComboBox#filter_dose_input {
+            QLineEdit#search_input, QComboBox#search_input, QLineEdit#filter_result_input, QLineEdit#filter_form_input, QLineEdit#filter_dose_input {
                 background-color: #FFFDE7;
-                color: #000000;
-            }
-            QComboBox#filter_result_input, QComboBox#filter_form_input, QComboBox#filter_dose_input {
-                font-weight: bold;
                 color: #000000;
             }
             QLineEdit:focus, QDateEdit:focus, QComboBox:focus {
@@ -664,23 +660,19 @@ class UnifiedParserApp(QMainWindow):
         main_tab_layout.addWidget(filter_result_label)
         main_tab_layout.addWidget(self.filter_result_input)
 
-        # Фильтр по форме выпуска - используем QComboBox для автокомплита
+        # Фильтр по форме выпуска - используем QLineEdit для корректного отображения текста
         filter_form_label = QLabel("Фильтр по форме выпуска:")
-        self.filter_form_input = QComboBox()
-        self.filter_form_input.setEditable(True)
+        self.filter_form_input = QLineEdit()
         self.filter_form_input.setObjectName("filter_form_input")
         self.filter_form_input.setPlaceholderText('Введите текст для фильтрации')
-        self.filter_form_input.setInsertPolicy(QComboBox.NoInsert)
         main_tab_layout.addWidget(filter_form_label)
         main_tab_layout.addWidget(self.filter_form_input)
 
-        # Фильтр по дозировке - используем QComboBox для автокомплита
+        # Фильтр по дозировке - используем QLineEdit для корректного отображения текста
         filter_dose_label = QLabel("Фильтр по дозировке:")
-        self.filter_dose_input = QComboBox()
-        self.filter_dose_input.setEditable(True)
+        self.filter_dose_input = QLineEdit()
         self.filter_dose_input.setObjectName("filter_dose_input")
         self.filter_dose_input.setPlaceholderText('Введите текст для фильтрации')
-        self.filter_dose_input.setInsertPolicy(QComboBox.NoInsert)
         main_tab_layout.addWidget(filter_dose_label)
         main_tab_layout.addWidget(self.filter_dose_input)
 
@@ -943,8 +935,8 @@ class UnifiedParserApp(QMainWindow):
     def apply_filter(self):
         """Фильтрация таблицы по тексту в колонке МНН, форма выпуска и дозировка по кнопке"""
         filter_mnn = self.filter_result_input.currentText().strip().lower()
-        filter_form = self.filter_form_input.currentText().strip().lower()
-        filter_dose = self.filter_dose_input.currentText().strip().lower()
+        filter_form = self.filter_form_input.text().strip().lower()
+        filter_dose = self.filter_dose_input.text().strip().lower()
         
         # Находим индексы колонок
         mnn_column_index = -1
@@ -984,8 +976,8 @@ class UnifiedParserApp(QMainWindow):
         # Обновляем filter_before_search для последующего добавления строк
         self.filter_before_search = {
             'mnn': self.filter_result_input.currentText().strip(),
-            'form': self.filter_form_input.currentText().strip(),
-            'dose': self.filter_dose_input.currentText().strip()
+            'form': self.filter_form_input.text().strip(),
+            'dose': self.filter_dose_input.text().strip()
         }
 
     def filter_table(self, filter_text):
@@ -1038,11 +1030,7 @@ class UnifiedParserApp(QMainWindow):
             self.all_rows = []
             # Сбрасываем фильтр
             self.filter_before_search = ""
-            # Очищаем поля фильтров
-            self.filter_result_input.clear()
-            self.filter_form_input.clear()
-            self.filter_dose_input.clear()
-            # НЕ сбрасываем базу данных (reference_data остается загруженной)
+            # НЕ очищаем поля фильтров и базу данных (reference_data остается загруженной)
             # Обновляем статус
             self.status_label.setText("Данные сброшены")
             self.append_log("=== ДАННЫЕ СБРОШЕНЫ ПОЛЬЗОВАТЕЛЕМ ===")
@@ -1108,8 +1096,8 @@ class UnifiedParserApp(QMainWindow):
         # Сохраняем значение фильтров ДО поиска
         self.filter_before_search = {
             'mnn': self.filter_result_input.currentText().strip(),
-            'form': self.filter_form_input.currentText().strip(),
-            'dose': self.filter_dose_input.currentText().strip()
+            'form': self.filter_form_input.text().strip(),
+            'dose': self.filter_dose_input.text().strip()
         }
 
         self.start_button.setEnabled(False)
@@ -1479,8 +1467,17 @@ class UnifiedParserApp(QMainWindow):
         """Обновление списков форм выпуска и дозировок для выбранного МНН"""
         # Обновляем список форм выпуска
         forms = self.forms_for_mnn.get(mnn, [])
+        
+        # Сохраняем текущий текст в поле формы
+        current_form_text = self.filter_form_input.text()
+        
         self.filter_form_input.clear()
-        self.filter_form_input.addItems(forms)
+        for f in forms:
+            self.filter_form_input.addItem(f)
+        
+        # Восстанавливаем текст, если он был
+        if current_form_text:
+            self.filter_form_input.setText(current_form_text)
         
         # Если форма не передана, обновляем все дозировки для МНН
         # Если форма передана - обновляем дозировки только для этой формы
@@ -1489,8 +1486,16 @@ class UnifiedParserApp(QMainWindow):
         else:
             doses = self.doses_for_mnn.get(mnn, [])
         
+        # Сохраняем текущий текст в поле дозировки
+        current_dose_text = self.filter_dose_input.text()
+        
         self.filter_dose_input.clear()
-        self.filter_dose_input.addItems(doses)
+        for d in doses:
+            self.filter_dose_input.addItem(d)
+        
+        # Восстанавливаем текст, если он был
+        if current_dose_text:
+            self.filter_dose_input.setText(current_dose_text)
 
 
 def launch_gui():
