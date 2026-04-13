@@ -473,6 +473,10 @@ class UnifiedParserApp(QMainWindow):
         self.all_rows = []
         self.filter_before_search = ""  # Фильтр МНН, установленный ДО поиска
         self.reference_data = []  # Список словарей {mnn, release_form, dose} из базы
+        self.mnn_list = []  # Список уникальных МНН для автокомплита
+        self.mnn_model = QStringListModel()  # Модель для автокомплита МНН
+        self.forms_for_mnn = {}  # МНН -> список форм выпуска
+        self.doses_for_mnn = {}  # МНН -> список дозировок
 
     def init_ui(self):
         """Инициализация интерфейса"""
@@ -589,11 +593,13 @@ class UnifiedParserApp(QMainWindow):
         main_tab_layout.setSpacing(8)
         main_tab_layout.setContentsMargins(4, 8, 4, 4)
 
-        # Поисковый запрос
+        # Поисковый запрос - используем QComboBox как в ЛС-парсер-лайт.py для автокомплита
         search_label = QLabel("Поисковый запрос (МНН):")
-        self.search_input = QLineEdit()
+        self.search_input = QComboBox()
+        self.search_input.setEditable(True)
         self.search_input.setObjectName("search_input")
         self.search_input.setPlaceholderText('Введите МНН')
+        self.search_input.setInsertPolicy(QComboBox.NoInsert)
         main_tab_layout.addWidget(search_label)
         main_tab_layout.addWidget(self.search_input)
 
@@ -639,27 +645,33 @@ class UnifiedParserApp(QMainWindow):
         filter_group.setLayout(filter_layout)
         main_tab_layout.addWidget(filter_group)
 
-        # Фильтр по МНН (под фильтрами)
+        # Фильтр по МНН (под фильтрами) - используем QComboBox для автокомплита
         filter_result_label = QLabel("Фильтр по МНН:")
-        self.filter_result_input = QLineEdit()
+        self.filter_result_input = QComboBox()
+        self.filter_result_input.setEditable(True)
         self.filter_result_input.setObjectName("filter_result_input")
         self.filter_result_input.setPlaceholderText('Введите текст для фильтрации')
+        self.filter_result_input.setInsertPolicy(QComboBox.NoInsert)
         main_tab_layout.addWidget(filter_result_label)
         main_tab_layout.addWidget(self.filter_result_input)
 
-        # Фильтр по форме выпуска
+        # Фильтр по форме выпуска - используем QComboBox для автокомплита
         filter_form_label = QLabel("Фильтр по форме выпуска:")
-        self.filter_form_input = QLineEdit()
+        self.filter_form_input = QComboBox()
+        self.filter_form_input.setEditable(True)
         self.filter_form_input.setObjectName("filter_form_input")
         self.filter_form_input.setPlaceholderText('Введите текст для фильтрации')
+        self.filter_form_input.setInsertPolicy(QComboBox.NoInsert)
         main_tab_layout.addWidget(filter_form_label)
         main_tab_layout.addWidget(self.filter_form_input)
 
-        # Фильтр по дозировке
+        # Фильтр по дозировке - используем QComboBox для автокомплита
         filter_dose_label = QLabel("Фильтр по дозировке:")
-        self.filter_dose_input = QLineEdit()
+        self.filter_dose_input = QComboBox()
+        self.filter_dose_input.setEditable(True)
         self.filter_dose_input.setObjectName("filter_dose_input")
         self.filter_dose_input.setPlaceholderText('Введите текст для фильтрации')
+        self.filter_dose_input.setInsertPolicy(QComboBox.NoInsert)
         main_tab_layout.addWidget(filter_dose_label)
         main_tab_layout.addWidget(self.filter_dose_input)
 
@@ -669,11 +681,22 @@ class UnifiedParserApp(QMainWindow):
         self.filter_button.clicked.connect(self.apply_filter)
         main_tab_layout.addWidget(self.filter_button)
 
-        # Кнопка загрузки базы данных
-        self.load_db_button = QPushButton('ЗАГРУЗИТЬ БАЗУ ДАННЫХ (МНН, форма, дозировка)')
+        # Кнопка загрузки базы данных с индикатором статуса
+        db_button_layout = QHBoxLayout()
+        self.load_db_button = QPushButton('База данных')
         self.load_db_button.setMinimumHeight(30)
         self.load_db_button.clicked.connect(self.load_reference_database)
-        main_tab_layout.addWidget(self.load_db_button)
+        
+        # Индикатор статуса базы данных (красный/зеленый кружок)
+        self.db_status_indicator = QLabel()
+        self.db_status_indicator.setFixedSize(12, 12)
+        self.db_status_indicator.setStyleSheet("background-color: red; border-radius: 6px;")
+        self.db_status_indicator.setToolTip("База данных не загружена")
+        
+        db_button_layout.addWidget(self.load_db_button)
+        db_button_layout.addWidget(self.db_status_indicator)
+        db_button_layout.addStretch()
+        main_tab_layout.addLayout(db_button_layout)
 
         # Небольшой отступ перед кнопкой "Запустить"
         main_tab_layout.addSpacing(8)
@@ -1331,19 +1354,67 @@ class UnifiedParserApp(QMainWindow):
         self.db_loader_thread.error.connect(self.on_database_error)
         # Добавляем обработчик завершения для разблокировки кнопки (на случай ошибки)
         self.db_loader_thread.finished.connect(lambda: self.load_db_button.setEnabled(True))
-        self.db_loader_thread.finished.connect(lambda: self.load_db_button.setText('ЗАГРУЗИТЬ БАЗУ ДАННЫХ (МНН, форма, дозировка)'))
+        self.db_loader_thread.finished.connect(lambda: self.load_db_button.setText('База данных'))
         self.db_loader_thread.error.connect(lambda: self.load_db_button.setEnabled(True))
-        self.db_loader_thread.error.connect(lambda: self.load_db_button.setText('ЗАГРУЗИТЬ БАЗУ ДАННЫХ (МНН, форма, дозировка)'))
+        self.db_loader_thread.error.connect(lambda: self.load_db_button.setText('База данных'))
         self.db_loader_thread.start()
     
     def on_database_loaded(self, reference_data, rows_loaded):
         """Обработка успешной загрузки базы данных"""
         self.reference_data = reference_data
         self.append_log(f"База данных загружена: {rows_loaded} записей")
+        
+        # Извлекаем уникальные МНН для автокомплита
+        self.mnn_list = list(set(item['mnn'] for item in reference_data if item['mnn']))
+        self.mnn_list.sort()
+        self.mnn_model.setStringList(self.mnn_list)
+        
+        # Устанавливаем модель автокомплита для всех ComboBox
+        self.search_input.setModel(self.mnn_model)
+        self.search_input.completer().setModel(self.mnn_model)
+        self.search_input.completer().setCompletionMode(QCompleter.PopupCompletion)
+        
+        self.filter_result_input.setModel(self.mnn_model)
+        self.filter_result_input.completer().setModel(self.mnn_model)
+        self.filter_result_input.completer().setCompletionMode(QCompleter.PopupCompletion)
+        
+        # Формируем словари форм выпуска и дозировок по МНН
+        self.forms_for_mnn = {}
+        self.doses_for_mnn = {}
+        for item in reference_data:
+            mnn = item['mnn']
+            form = item['release_form']
+            dose = item['dose']
+            
+            if mnn not in self.forms_for_mnn:
+                self.forms_for_mnn[mnn] = set()
+            if mnn not in self.doses_for_mnn:
+                self.doses_for_mnn[mnn] = set()
+            
+            if form:
+                self.forms_for_mnn[mnn].add(form)
+            if dose:
+                self.doses_for_mnn[mnn].add(dose)
+        
+        # Преобразуем множества в отсортированные списки
+        for mnn in self.forms_for_mnn:
+            self.forms_for_mnn[mnn] = sorted(list(self.forms_for_mnn[mnn]))
+        for mnn in self.doses_for_mnn:
+            self.doses_for_mnn[mnn] = sorted(list(self.doses_for_mnn[mnn]))
+        
+        # Подключаем обработчики для автозаполнения форм и дозировок
+        self.search_input.lineEdit().textChanged.connect(self.on_search_text_changed)
+        self.filter_result_input.lineEdit().textChanged.connect(self.on_filter_mnn_changed)
+        
+        # Обновляем индикатор статуса
+        self.db_status_indicator.setStyleSheet("background-color: green; border-radius: 6px;")
+        self.db_status_indicator.setToolTip("База данных загружена")
+        
         QMessageBox.information(self, "Успех", 
             f"База данных успешно загружена!\n"
-            f"Записей: {rows_loaded}\n\n"
-            f"Данные будут использоваться для фильтрации.")
+            f"Записей: {rows_loaded}\n"
+            f"Уникальных МНН: {len(self.mnn_list)}\n\n"
+            f"Теперь доступен автокомплит для МНН, форм выпуска и дозировок.")
         # Кнопка будет разблокирована через connected сигналы
     
     def on_database_error(self, error_msg):
@@ -1351,6 +1422,34 @@ class UnifiedParserApp(QMainWindow):
         logging.error(f"Ошибка загрузки базы данных: {error_msg}")
         QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить базу данных:\n{error_msg}")
         # Кнопка будет разблокирована через connected сигналы
+    
+    def on_search_text_changed(self, text):
+        """Обработка изменения текста в поле поискового запроса"""
+        # Автоматически копируем выбранное МНН в фильтр по МНН
+        if text in self.mnn_list:
+            self.filter_result_input.setCurrentText(text)
+            self.update_forms_and_doses(text)
+    
+    def on_filter_mnn_changed(self, text):
+        """Обработка изменения текста в фильтре по МНН"""
+        if text in self.mnn_list:
+            self.update_forms_and_doses(text)
+    
+    def update_forms_and_doses(self, mnn):
+        """Обновление списков форм выпуска и дозировок для выбранного МНН"""
+        # Обновляем список форм выпуска
+        forms = self.forms_for_mnn.get(mnn, [])
+        forms_model = QStringListModel(forms)
+        self.filter_form_input.setModel(forms_model)
+        self.filter_form_input.completer().setModel(forms_model)
+        self.filter_form_input.completer().setCompletionMode(QCompleter.PopupCompletion)
+        
+        # Обновляем список дозировок
+        doses = self.doses_for_mnn.get(mnn, [])
+        doses_model = QStringListModel(doses)
+        self.filter_dose_input.setModel(doses_model)
+        self.filter_dose_input.completer().setModel(doses_model)
+        self.filter_dose_input.completer().setCompletionMode(QCompleter.PopupCompletion)
 
 
 def launch_gui():
