@@ -160,7 +160,7 @@ class DatabaseLoaderWorker(QThread):
             for idx, row in df.iterrows():
                 mnn_val = row.iloc[0]  # Столбец 0: Стандартизованное МНН
                 form_val = row.iloc[3]  # Столбец 3: Стандартизованная лекарственная форма
-                dose_val = row.iloc[4]  # Столбец 4: Стандартизованная дозировка
+                dose_val = row.iloc[8]  # Столбец 9 (индекс 8): Дозировка
                 
                 mnn_str = str(mnn_val).strip() if pd.notna(mnn_val) else ""
                 form_str = str(form_val).strip() if pd.notna(form_val) else ""
@@ -1037,6 +1037,7 @@ class UnifiedParserApp(QMainWindow):
             self.filter_result_input.clear()
             self.filter_form_input.clear()
             self.filter_dose_input.clear()
+            # НЕ сбрасываем базу данных (reference_data остается загруженной)
             # Обновляем статус
             self.status_label.setText("Данные сброшены")
             self.append_log("=== ДАННЫЕ СБРОШЕНЫ ПОЛЬЗОВАТЕЛЕМ ===")
