@@ -120,9 +120,9 @@ class DatabaseLoaderWorker(QThread):
             
             # Используем pandas как в ЛС-парсер-лайт.py для надежности
             import pandas as pd
-            xl_file = pd.ExcelFile(self.file_path)
             
             # Ищем лист с именем, начинающимся с "esklp_smnn" как в ЛС-парсер-лайт.py
+            xl_file = pd.ExcelFile(self.file_path)
             smnn_sheet_name = None
             for sheet_name in xl_file.sheet_names:
                 if sheet_name.startswith("esklp_smnn"):
@@ -130,28 +130,20 @@ class DatabaseLoaderWorker(QThread):
                     break
             
             if not smnn_sheet_name:
-                # Пробуем найти любой лист содержащий 'esklp'
-                for sheet_name in xl_file.sheet_names:
-                    if 'esklp' in sheet_name.lower():
-                        smnn_sheet_name = sheet_name
-                        break
-            
-            if not smnn_sheet_name:
                 self.error.emit(f"Лист 'esklp_smnn' не найден. Доступные листы: {xl_file.sheet_names}")
                 xl_file.close()
                 return
             
-            # Читаем данные без заголовков, чтобы получить полный контроль над обработкой строк
-            # header=None означает, что все строки читаются как данные
-            df = pd.read_excel(self.file_path, sheet_name=smnn_sheet_name, header=None)
+            # Читаем данные с первой строкой как заголовок (как в ЛС-парсер-лайт.py)
+            # header=0 означает, что первая строка используется как заголовок
+            df = pd.read_excel(self.file_path, sheet_name=smnn_sheet_name, header=0)
             
-            # Пропускаем первые 4 строки (индексы 0-3), так как они содержат артефакты:
-            # Строка 0: Заголовки столбцов
-            # Строка 1: nan | nan | Кол-во
-            # Строка 2: nan | nan | nan
-            # Строка 3: 1 | 4 | 5 (номера столбцов)
-            # Реальные данные начинаются с индекса 4
-            df = df.iloc[4:].reset_index(drop=True)
+            # Пропускаем первые 3 строки после заголовка (индексы 0-2), так как они содержат артефакты:
+            # Строка 0 (индекс 0): nan | nan | Кол-во
+            # Строка 1 (индекс 1): nan | nan | nan  
+            # Строка 2 (индекс 2): 1 | 4 | 5 (номера столбцов)
+            # Реальные данные начинаются с индекса 3
+            df = df.iloc[3:].reset_index(drop=True)
             
             # Формируем reference_data в том же формате
             reference_data = []
