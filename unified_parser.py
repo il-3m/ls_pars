@@ -505,6 +505,11 @@ class UnifiedParserApp(QMainWindow):
             }
             QLineEdit#search_input, QLineEdit#filter_result_input, QLineEdit#filter_form_input, QLineEdit#filter_dose_input, QComboBox#search_input {
                 background-color: #FFFDE7;
+                color: #000000;
+            }
+            QLineEdit#filter_result_input, QLineEdit#filter_form_input, QLineEdit#filter_dose_input {
+                font-weight: bold;
+                color: #000000;
             }
             QLineEdit:focus, QDateEdit:focus, QComboBox:focus {
                 border: 1px solid #000000;
