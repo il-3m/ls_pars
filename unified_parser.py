@@ -118,38 +118,52 @@ class DatabaseLoaderWorker(QThread):
                 self.error.emit("Библиотека openpyxl не установлена")
                 return
             
-            wb = openpyxl.load_workbook(self.file_path, read_only=True, data_only=True)
+            # Используем pandas как в ЛС-парсер-лайт.py для надежности
+            import pandas as pd
+            xl_file = pd.ExcelFile(self.file_path)
             
-            # Ищем лист с именем, содержащим 'esklp'
-            sheet_name = None
-            for name in wb.sheetnames:
-                if 'esklp' in name.lower():
-                    sheet_name = name
+            # Ищем лист с именем, начинающимся с "esklp_smnn" как в ЛС-парсер-лайт.py
+            smnn_sheet_name = None
+            for sheet_name in xl_file.sheet_names:
+                if sheet_name.startswith("esklp_smnn"):
+                    smnn_sheet_name = sheet_name
                     break
             
-            if not sheet_name:
-                self.error.emit(f"Не найден лист с данными в файле.\nЛисты: {wb.sheetnames}")
-                wb.close()
+            if not smnn_sheet_name:
+                # Пробуем найти любой лист содержащий 'esklp'
+                for sheet_name in xl_file.sheet_names:
+                    if 'esklp' in sheet_name.lower():
+                        smnn_sheet_name = sheet_name
+                        break
+            
+            if not smnn_sheet_name:
+                self.error.emit(f"Лист 'esklp_smnn' не найден. Доступные листы: {xl_file.sheet_names}")
+                xl_file.close()
                 return
             
-            ws = wb[sheet_name]
+            # Читаем данные: столбец 1 - МНН, столбец 4 - форма выпуска, столбец 5 - дозировка
+            # header=0 означает, что первая строка (индекс 0) - это заголовки
+            # Поэтому данные начинаются с индекса 1
+            df = pd.read_excel(self.file_path, sheet_name=smnn_sheet_name, header=0)
             
-            # Читаем данные начиная со строки 5
-            # Столбец A (1) - МНН, D (4) - Форма выпуска, I (9) - Дозировка
+            # Пропускаем первую строку данных (индекс 0), так как она может содержать артефакты
+            df = df.iloc[1:].reset_index(drop=True)
+            
+            # Формируем reference_data в том же формате
             reference_data = []
             rows_loaded = 0
             
-            for row_idx in range(5, ws.max_row + 1):
-                mnn_val = ws.cell(row=row_idx, column=1).value
-                form_val = ws.cell(row=row_idx, column=4).value
-                dose_val = ws.cell(row=row_idx, column=9).value
+            for idx, row in df.iterrows():
+                mnn_val = row.iloc[0]  # Столбец 1: Стандартизованное МНН
+                form_val = row.iloc[3]  # Столбец 4: Стандартизованная лекарственная форма
+                dose_val = row.iloc[4]  # Столбец 5: Стандартизованная дозировка
                 
-                # Преобразуем в строки, обрабатывая None
-                mnn_str = str(mnn_val).strip() if mnn_val else ""
-                form_str = str(form_val).strip() if form_val else ""
-                dose_str = str(dose_val).strip() if dose_val else ""
+                mnn_str = str(mnn_val).strip() if pd.notna(mnn_val) else ""
+                form_str = str(form_val).strip() if pd.notna(form_val) else ""
+                dose_str = str(dose_val).strip() if pd.notna(dose_val) else ""
                 
-                if mnn_str or form_str or dose_str:
+                # Пропускаем строки где МНН пустое или похоже на номер столбца
+                if mnn_str and mnn_str not in ['1', '2', '3', '4', '5'] and not mnn_str.isdigit():
                     reference_data.append({
                         'mnn': mnn_str,
                         'release_form': form_str,
@@ -157,7 +171,7 @@ class DatabaseLoaderWorker(QThread):
                     })
                     rows_loaded += 1
             
-            wb.close()
+            xl_file.close()
             self.finished.emit(reference_data, rows_loaded)
             
         except Exception as e:
