@@ -141,22 +141,24 @@ class DatabaseLoaderWorker(QThread):
                 xl_file.close()
                 return
             
-            # Читаем данные: столбец 1 - МНН, столбец 4 - форма выпуска, столбец 5 - дозировка
+            # Читаем данные: столбец 0 - МНН, столбец 3 - форма выпуска, столбец 4 - дозировка
             # header=0 означает, что первая строка (индекс 0) - это заголовки
-            # Поэтому данные начинаются с индекса 1
             df = pd.read_excel(self.file_path, sheet_name=smnn_sheet_name, header=0)
             
-            # Пропускаем первую строку данных (индекс 0), так как она может содержать артефакты
-            df = df.iloc[1:].reset_index(drop=True)
+            # Пропускаем первые 2 строки данных (индексы 0 и 1), так как они содержат артефакты
+            # Строка 0: NaN значения
+            # Строка 1: Ссылка и другие служебные данные
+            # Данные начинаются с индекса 2
+            df = df.iloc[2:].reset_index(drop=True)
             
             # Формируем reference_data в том же формате
             reference_data = []
             rows_loaded = 0
             
             for idx, row in df.iterrows():
-                mnn_val = row.iloc[0]  # Столбец 1: Стандартизованное МНН
-                form_val = row.iloc[3]  # Столбец 4: Стандартизованная лекарственная форма
-                dose_val = row.iloc[4]  # Столбец 5: Стандартизованная дозировка
+                mnn_val = row.iloc[0]  # Столбец 0: Стандартизованное МНН
+                form_val = row.iloc[3]  # Столбец 3: Стандартизованная лекарственная форма
+                dose_val = row.iloc[4]  # Столбец 4: Стандартизованная дозировка
                 
                 mnn_str = str(mnn_val).strip() if pd.notna(mnn_val) else ""
                 form_str = str(form_val).strip() if pd.notna(form_val) else ""
@@ -662,6 +664,10 @@ class UnifiedParserApp(QMainWindow):
         self.filter_form_input.setObjectName("filter_form_input")
         self.filter_form_input.setPlaceholderText('Введите текст для фильтрации')
         self.filter_form_input.setInsertPolicy(QComboBox.NoInsert)
+        # Создаем completer для формы выпуска
+        self.filter_form_completer = QCompleter()
+        self.filter_form_completer.setCompletionMode(QCompleter.PopupCompletion)
+        self.filter_form_input.setCompleter(self.filter_form_completer)
         main_tab_layout.addWidget(filter_form_label)
         main_tab_layout.addWidget(self.filter_form_input)
 
@@ -672,6 +678,10 @@ class UnifiedParserApp(QMainWindow):
         self.filter_dose_input.setObjectName("filter_dose_input")
         self.filter_dose_input.setPlaceholderText('Введите текст для фильтрации')
         self.filter_dose_input.setInsertPolicy(QComboBox.NoInsert)
+        # Создаем completer для дозировки
+        self.filter_dose_completer = QCompleter()
+        self.filter_dose_completer.setCompletionMode(QCompleter.PopupCompletion)
+        self.filter_dose_input.setCompleter(self.filter_dose_completer)
         main_tab_layout.addWidget(filter_dose_label)
         main_tab_layout.addWidget(self.filter_dose_input)
 
@@ -1440,16 +1450,12 @@ class UnifiedParserApp(QMainWindow):
         # Обновляем список форм выпуска
         forms = self.forms_for_mnn.get(mnn, [])
         forms_model = QStringListModel(forms)
-        self.filter_form_input.setModel(forms_model)
-        self.filter_form_input.completer().setModel(forms_model)
-        self.filter_form_input.completer().setCompletionMode(QCompleter.PopupCompletion)
+        self.filter_form_completer.setModel(forms_model)
         
         # Обновляем список дозировок
         doses = self.doses_for_mnn.get(mnn, [])
         doses_model = QStringListModel(doses)
-        self.filter_dose_input.setModel(doses_model)
-        self.filter_dose_input.completer().setModel(doses_model)
-        self.filter_dose_input.completer().setCompletionMode(QCompleter.PopupCompletion)
+        self.filter_dose_completer.setModel(doses_model)
 
 
 def launch_gui():
