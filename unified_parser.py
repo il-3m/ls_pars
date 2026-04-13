@@ -787,11 +787,11 @@ class UnifiedParserApp(QMainWindow):
         stats_layout = QVBoxLayout()
         stats_layout.setSpacing(4)
         
-        self.total_links_label = QLabel("Ссылок найдено: 0")
-        self.total_rows_label = QLabel("Строк распаршено: 0")
+        self.total_links_label = QLabel("Контрактов найдено: 0")
+        self.filtered_count_label = QLabel("Отфильтровано позиций: 0")
         
         stats_layout.addWidget(self.total_links_label)
-        stats_layout.addWidget(self.total_rows_label)
+        stats_layout.addWidget(self.filtered_count_label)
         stats_group.setLayout(stats_layout)
         left_layout.addWidget(stats_group)
 
@@ -1025,8 +1025,8 @@ class UnifiedParserApp(QMainWindow):
             # Очищаем лог
             self.log_text.clear()
             # Сбрасываем счетчики
-            self.total_links_label.setText("Ссылок найдено: 0")
-            self.total_rows_label.setText("Строк распаршено: 0")
+            self.total_links_label.setText("Контрактов найдено: 0")
+            self.filtered_count_label.setText("Отфильтровано позиций: 0")
             # Очищаем прогресс бар
             self.progress_bar.setValue(0)
             # Очищаем внутренний список данных
@@ -1247,13 +1247,22 @@ class UnifiedParserApp(QMainWindow):
         """Обработка найденной ссылки"""
         self.links_list.addItem(link)
         count = self.links_list.count()
-        self.total_links_label.setText(f"Ссылок найдено: {count}")
+        self.total_links_label.setText(f"Контрактов найдено: {count}")
 
     def on_data_parsed(self, count):
         """Обработка добавленных строк данных"""
         current_total = len(self.all_rows)
         self.all_rows.extend([{}] * count)  # Просто для подсчета
-        self.total_rows_label.setText(f"Строк распаршено: {len(self.all_rows)}")
+        # Обновляем счетчик отфильтрованных позиций
+        self.update_filtered_count()
+
+    def update_filtered_count(self):
+        """Обновление счетчика отфильтрованных позиций"""
+        visible_rows = 0
+        for row in range(self.results_table.rowCount()):
+            if not self.results_table.isRowHidden(row):
+                visible_rows += 1
+        self.filtered_count_label.setText(f"Отфильтровано позиций: {visible_rows}")
 
     def on_parsing_finished(self, rows):
         """Завершение парсинга"""
@@ -1263,19 +1272,20 @@ class UnifiedParserApp(QMainWindow):
         
         if rows:
             self.all_rows = rows
-            self.total_rows_label.setText(f"Строк распаршено: {len(rows)}")
+            self.update_filtered_count()
             self.append_log(f"=== ЗАВЕРШЕНО. Всего строк: {len(rows)} ===")
             self.status_label.setText(f"Готово. Строк: {len(rows)}")
             
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Information)
             msg.setText("Парсинг завершен успешно!")
-            msg.setInformativeText(f"Найдено ссылок: {self.links_list.count()}\nРаспаршено строк: {len(rows)}")
+            msg.setInformativeText(f"Найдено контрактов: {self.links_list.count()}\nРаспаршено строк: {len(rows)}")
             msg.setStandardButtons(QMessageBox.Ok)
             msg.exec_()
         else:
             self.append_log("=== ЗАВЕРШЕНО БЕЗ ДАННЫХ ===")
             self.status_label.setText("Завершено без данных")
+
 
     def open_link(self, item):
         """Открытие ссылки в браузере из списка links_list"""
@@ -1385,6 +1395,7 @@ class UnifiedParserApp(QMainWindow):
         # Формируем словари форм выпуска и дозировок по МНН
         self.forms_for_mnn = {}
         self.doses_for_mnn = {}
+        self.doses_for_mnn_form = {}  # doses_for_mnn_form[mnn][form] = [doses]
         for item in reference_data:
             mnn = item['mnn']
             form = item['release_form']
@@ -1394,9 +1405,16 @@ class UnifiedParserApp(QMainWindow):
                 self.forms_for_mnn[mnn] = set()
             if mnn not in self.doses_for_mnn:
                 self.doses_for_mnn[mnn] = set()
+            if mnn not in self.doses_for_mnn_form:
+                self.doses_for_mnn_form[mnn] = {}
             
             if form:
                 self.forms_for_mnn[mnn].add(form)
+                if form not in self.doses_for_mnn_form[mnn]:
+                    self.doses_for_mnn_form[mnn][form] = set()
+                if dose:
+                    self.doses_for_mnn_form[mnn][form].add(dose)
+            
             if dose:
                 self.doses_for_mnn[mnn].add(dose)
         
@@ -1405,10 +1423,14 @@ class UnifiedParserApp(QMainWindow):
             self.forms_for_mnn[mnn] = sorted(list(self.forms_for_mnn[mnn]))
         for mnn in self.doses_for_mnn:
             self.doses_for_mnn[mnn] = sorted(list(self.doses_for_mnn[mnn]))
+        for mnn in self.doses_for_mnn_form:
+            for form in self.doses_for_mnn_form[mnn]:
+                self.doses_for_mnn_form[mnn][form] = sorted(list(self.doses_for_mnn_form[mnn][form]))
         
         # Подключаем обработчики для автозаполнения форм и дозировок
         self.search_input.lineEdit().textChanged.connect(self.on_search_text_changed)
         self.filter_result_input.lineEdit().textChanged.connect(self.on_filter_mnn_changed)
+        self.filter_form_input.lineEdit().textChanged.connect(self.on_filter_form_changed)
         
         # Обновляем индикатор статуса
         self.db_status_indicator.setStyleSheet("background-color: green; border-radius: 6px;")
@@ -1439,15 +1461,28 @@ class UnifiedParserApp(QMainWindow):
         if text in self.mnn_list:
             self.update_forms_and_doses(text)
     
-    def update_forms_and_doses(self, mnn):
+    def on_filter_form_changed(self, form):
+        """Обработка изменения текста в фильтре по форме выпуска"""
+        # Получаем текущее МНН
+        mnn = self.filter_result_input.currentText().strip()
+        if mnn in self.mnn_list and form:
+            # Обновляем дозировки только для выбранной формы
+            self.update_forms_and_doses(mnn, form)
+    
+    def update_forms_and_doses(self, mnn, form=None):
         """Обновление списков форм выпуска и дозировок для выбранного МНН"""
         # Обновляем список форм выпуска
         forms = self.forms_for_mnn.get(mnn, [])
         self.filter_form_input.clear()
         self.filter_form_input.addItems(forms)
         
-        # Обновляем список дозировок
-        doses = self.doses_for_mnn.get(mnn, [])
+        # Если форма не передана, обновляем все дозировки для МНН
+        # Если форма передана - обновляем дозировки только для этой формы
+        if form:
+            doses = self.doses_for_mnn_form.get(mnn, {}).get(form, [])
+        else:
+            doses = self.doses_for_mnn.get(mnn, [])
+        
         self.filter_dose_input.clear()
         self.filter_dose_input.addItems(doses)
 
