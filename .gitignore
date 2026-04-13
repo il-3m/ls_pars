@@ -1,9 +1,4 @@
 ```
-# Build artifacts
-build/
-dist/
-*.exe
-
 # Dependencies
 venv/
 .venv/
@@ -11,6 +6,17 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# Build artifacts
+dist/
+build/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Logs
+*.log
 
 # Environment
 .env
@@ -23,12 +29,20 @@ __pycache__/
 *.swp
 *.swo
 
-# Logs and temp files
-*.log
-*.tmp
-*.bak
-
-# OS generated files
+# OS
 .DS_Store
 Thumbs.db
+
+# Coverage
+.coverage
+coverage/
+htmlcov/
+
+# Python specific
+*.egg-info/
+.Python
+*.py[cod]
+*$py.class
+*$py.o
+*$py.d
 ```
