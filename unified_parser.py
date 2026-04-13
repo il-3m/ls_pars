@@ -141,15 +141,17 @@ class DatabaseLoaderWorker(QThread):
                 xl_file.close()
                 return
             
-            # Читаем данные: столбец 0 - МНН, столбец 3 - форма выпуска, столбец 4 - дозировка
-            # header=0 означает, что первая строка (индекс 0) - это заголовки
-            df = pd.read_excel(self.file_path, sheet_name=smnn_sheet_name, header=0)
+            # Читаем данные без заголовков, чтобы получить полный контроль над обработкой строк
+            # header=None означает, что все строки читаются как данные
+            df = pd.read_excel(self.file_path, sheet_name=smnn_sheet_name, header=None)
             
-            # Пропускаем первые 2 строки данных (индексы 0 и 1), так как они содержат артефакты
-            # Строка 0: NaN значения
-            # Строка 1: Ссылка и другие служебные данные
-            # Данные начинаются с индекса 2
-            df = df.iloc[2:].reset_index(drop=True)
+            # Пропускаем первые 4 строки (индексы 0-3), так как они содержат артефакты:
+            # Строка 0: Заголовки столбцов
+            # Строка 1: nan | nan | Кол-во
+            # Строка 2: nan | nan | nan
+            # Строка 3: 1 | 4 | 5 (номера столбцов)
+            # Реальные данные начинаются с индекса 4
+            df = df.iloc[4:].reset_index(drop=True)
             
             # Формируем reference_data в том же формате
             reference_data = []
@@ -943,9 +945,9 @@ class UnifiedParserApp(QMainWindow):
 
     def apply_filter(self):
         """Фильтрация таблицы по тексту в колонке МНН, форма выпуска и дозировка по кнопке"""
-        filter_mnn = self.filter_result_input.text().strip().lower()
-        filter_form = self.filter_form_input.text().strip().lower()
-        filter_dose = self.filter_dose_input.text().strip().lower()
+        filter_mnn = self.filter_result_input.currentText().strip().lower()
+        filter_form = self.filter_form_input.currentText().strip().lower()
+        filter_dose = self.filter_dose_input.currentText().strip().lower()
         
         # Находим индексы колонок
         mnn_column_index = -1
@@ -984,9 +986,9 @@ class UnifiedParserApp(QMainWindow):
         
         # Обновляем filter_before_search для последующего добавления строк
         self.filter_before_search = {
-            'mnn': self.filter_result_input.text().strip(),
-            'form': self.filter_form_input.text().strip(),
-            'dose': self.filter_dose_input.text().strip()
+            'mnn': self.filter_result_input.currentText().strip(),
+            'form': self.filter_form_input.currentText().strip(),
+            'dose': self.filter_dose_input.currentText().strip()
         }
 
     def filter_table(self, filter_text):
@@ -1100,16 +1102,16 @@ class UnifiedParserApp(QMainWindow):
 
     def start_parsing(self):
         """Запуск полного цикла парсинга"""
-        search_text = self.search_input.text().strip()
+        search_text = self.search_input.currentText().strip()
         if not search_text:
             QMessageBox.warning(self, "Внимание", "Введите поисковый запрос")
             return
 
         # Сохраняем значение фильтров ДО поиска
         self.filter_before_search = {
-            'mnn': self.filter_result_input.text().strip(),
-            'form': self.filter_form_input.text().strip(),
-            'dose': self.filter_dose_input.text().strip()
+            'mnn': self.filter_result_input.currentText().strip(),
+            'form': self.filter_form_input.currentText().strip(),
+            'dose': self.filter_dose_input.currentText().strip()
         }
 
         self.start_button.setEnabled(False)
