@@ -120,9 +120,9 @@ class DatabaseLoaderWorker(QThread):
             
             # Используем pandas как в ЛС-парсер-лайт.py для надежности
             import pandas as pd
+            xl_file = pd.ExcelFile(self.file_path)
             
             # Ищем лист с именем, начинающимся с "esklp_smnn" как в ЛС-парсер-лайт.py
-            xl_file = pd.ExcelFile(self.file_path)
             smnn_sheet_name = None
             for sheet_name in xl_file.sheet_names:
                 if sheet_name.startswith("esklp_smnn"):
@@ -130,20 +130,28 @@ class DatabaseLoaderWorker(QThread):
                     break
             
             if not smnn_sheet_name:
+                # Пробуем найти любой лист содержащий 'esklp'
+                for sheet_name in xl_file.sheet_names:
+                    if 'esklp' in sheet_name.lower():
+                        smnn_sheet_name = sheet_name
+                        break
+            
+            if not smnn_sheet_name:
                 self.error.emit(f"Лист 'esklp_smnn' не найден. Доступные листы: {xl_file.sheet_names}")
                 xl_file.close()
                 return
             
-            # Читаем данные с первой строкой как заголовок (как в ЛС-парсер-лайт.py)
-            # header=0 означает, что первая строка используется как заголовок
-            df = pd.read_excel(self.file_path, sheet_name=smnn_sheet_name, header=0)
+            # Читаем данные без заголовков, чтобы получить полный контроль над обработкой строк
+            # header=None означает, что все строки читаются как данные
+            df = pd.read_excel(self.file_path, sheet_name=smnn_sheet_name, header=None)
             
-            # Пропускаем первые 3 строки после заголовка (индексы 0-2), так как они содержат артефакты:
-            # Строка 0 (индекс 0): nan | nan | Кол-во
-            # Строка 1 (индекс 1): nan | nan | nan  
-            # Строка 2 (индекс 2): 1 | 4 | 5 (номера столбцов)
-            # Реальные данные начинаются с индекса 3
-            df = df.iloc[3:].reset_index(drop=True)
+            # Пропускаем первые 4 строки (индексы 0-3), так как они содержат артефакты:
+            # Строка 0: Заголовки столбцов
+            # Строка 1: nan | nan | Кол-во
+            # Строка 2: nan | nan | nan
+            # Строка 3: 1 | 4 | 5 (номера столбцов)
+            # Реальные данные начинаются с индекса 4
+            df = df.iloc[4:].reset_index(drop=True)
             
             # Формируем reference_data в том же формате
             reference_data = []
@@ -652,19 +660,23 @@ class UnifiedParserApp(QMainWindow):
         main_tab_layout.addWidget(filter_result_label)
         main_tab_layout.addWidget(self.filter_result_input)
 
-        # Фильтр по форме выпуска - используем QLineEdit для корректного отображения текста
+        # Фильтр по форме выпуска - используем QComboBox для автокомплита
         filter_form_label = QLabel("Фильтр по форме выпуска:")
-        self.filter_form_input = QLineEdit()
+        self.filter_form_input = QComboBox()
+        self.filter_form_input.setEditable(True)
         self.filter_form_input.setObjectName("filter_form_input")
         self.filter_form_input.setPlaceholderText('Введите текст для фильтрации')
+        self.filter_form_input.setInsertPolicy(QComboBox.NoInsert)
         main_tab_layout.addWidget(filter_form_label)
         main_tab_layout.addWidget(self.filter_form_input)
 
-        # Фильтр по дозировке - используем QLineEdit для корректного отображения текста
+        # Фильтр по дозировке - используем QComboBox для автокомплита
         filter_dose_label = QLabel("Фильтр по дозировке:")
-        self.filter_dose_input = QLineEdit()
+        self.filter_dose_input = QComboBox()
+        self.filter_dose_input.setEditable(True)
         self.filter_dose_input.setObjectName("filter_dose_input")
         self.filter_dose_input.setPlaceholderText('Введите текст для фильтрации')
+        self.filter_dose_input.setInsertPolicy(QComboBox.NoInsert)
         main_tab_layout.addWidget(filter_dose_label)
         main_tab_layout.addWidget(self.filter_dose_input)
 
@@ -927,8 +939,8 @@ class UnifiedParserApp(QMainWindow):
     def apply_filter(self):
         """Фильтрация таблицы по тексту в колонке МНН, форма выпуска и дозировка по кнопке"""
         filter_mnn = self.filter_result_input.currentText().strip().lower()
-        filter_form = self.filter_form_input.text().strip().lower()
-        filter_dose = self.filter_dose_input.text().strip().lower()
+        filter_form = self.filter_form_input.currentText().strip().lower()
+        filter_dose = self.filter_dose_input.currentText().strip().lower()
         
         # Находим индексы колонок
         mnn_column_index = -1
@@ -968,8 +980,8 @@ class UnifiedParserApp(QMainWindow):
         # Обновляем filter_before_search для последующего добавления строк
         self.filter_before_search = {
             'mnn': self.filter_result_input.currentText().strip(),
-            'form': self.filter_form_input.text().strip(),
-            'dose': self.filter_dose_input.text().strip()
+            'form': self.filter_form_input.currentText().strip(),
+            'dose': self.filter_dose_input.currentText().strip()
         }
 
     def filter_table(self, filter_text):
@@ -1088,8 +1100,8 @@ class UnifiedParserApp(QMainWindow):
         # Сохраняем значение фильтров ДО поиска
         self.filter_before_search = {
             'mnn': self.filter_result_input.currentText().strip(),
-            'form': self.filter_form_input.text().strip(),
-            'dose': self.filter_dose_input.text().strip()
+            'form': self.filter_form_input.currentText().strip(),
+            'dose': self.filter_dose_input.currentText().strip()
         }
 
         self.start_button.setEnabled(False)
@@ -1418,7 +1430,7 @@ class UnifiedParserApp(QMainWindow):
         self.filter_result_input.lineEdit().textChanged.connect(self.on_filter_mnn_changed)
         self.filter_form_input.lineEdit().textChanged.connect(self.on_filter_form_changed)
         
-        # Обновляем индикатор статуса
+        # Обновляем индикатор статуса базы данных
         self.db_status_indicator.setStyleSheet("background-color: green; border-radius: 6px;")
         self.db_status_indicator.setToolTip("База данных загружена")
         
@@ -1461,15 +1473,18 @@ class UnifiedParserApp(QMainWindow):
         forms = self.forms_for_mnn.get(mnn, [])
         
         # Сохраняем текущий текст в поле формы
-        current_form_text = self.filter_form_input.text()
+        current_form_text = self.filter_form_input.currentText()
         
+        # Очищаем и заполняем заново
+        self.filter_form_input.blockSignals(True)
         self.filter_form_input.clear()
         for f in forms:
             self.filter_form_input.addItem(f)
+        self.filter_form_input.blockSignals(False)
         
         # Восстанавливаем текст, если он был
         if current_form_text:
-            self.filter_form_input.setText(current_form_text)
+            self.filter_form_input.setCurrentText(current_form_text)
         
         # Если форма не передана, обновляем все дозировки для МНН
         # Если форма передана - обновляем дозировки только для этой формы
@@ -1479,15 +1494,18 @@ class UnifiedParserApp(QMainWindow):
             doses = self.doses_for_mnn.get(mnn, [])
         
         # Сохраняем текущий текст в поле дозировки
-        current_dose_text = self.filter_dose_input.text()
+        current_dose_text = self.filter_dose_input.currentText()
         
+        # Очищаем и заполняем заново
+        self.filter_dose_input.blockSignals(True)
         self.filter_dose_input.clear()
         for d in doses:
             self.filter_dose_input.addItem(d)
+        self.filter_dose_input.blockSignals(False)
         
         # Восстанавливаем текст, если он был
         if current_dose_text:
-            self.filter_dose_input.setText(current_dose_text)
+            self.filter_dose_input.setCurrentText(current_dose_text)
 
 
 def launch_gui():
