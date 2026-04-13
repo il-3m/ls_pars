@@ -1015,6 +1015,7 @@ def export_csv(rows: list[dict[str, str]], out_path: Path) -> None:
 def export_xlsx(rows: list[dict[str, str]], out_path: Path) -> bool:
     try:
         import pandas as pd
+        from openpyxl import load_workbook
     except Exception:
         return False
 
@@ -1022,6 +1023,40 @@ def export_xlsx(rows: list[dict[str, str]], out_path: Path) -> bool:
     df = pd.DataFrame(rows, columns=FIELD_ORDER)
     df = df.rename(columns=EXPORT_HEADERS_RU)
     df.to_excel(out_path, index=False)
+    
+    # Применяем числовой формат к указанным полям
+    numeric_columns = [
+        "Цена за единицу измерения, ₽",
+        "Количество лекарственных форм в первичной упаковке",
+        "Количество первичных упаковок в потребительской упаковке",
+        "Количество потребительских единиц в потребительской упаковке"
+    ]
+    
+    wb = load_workbook(out_path)
+    ws = wb.active
+    
+    # Находим индексы столбцов для числовых полей
+    header_row = 1
+    col_indices = {}
+    for col_idx, cell in enumerate(ws[header_row], start=1):
+        if cell.value in numeric_columns:
+            col_indices[cell.value] = col_idx
+    
+    # Применяем числовой формат к данным
+    for row_idx in range(2, ws.max_row + 1):
+        for col_name, col_idx in col_indices.items():
+            cell = ws.cell(row=row_idx, column=col_idx)
+            if cell.value is not None and cell.value != "":
+                try:
+                    # Преобразуем значение в число
+                    numeric_value = float(str(cell.value).replace(" ", "").replace(",", "."))
+                    cell.value = numeric_value
+                    # Применяем числовой формат
+                    cell.number_format = '0.00' if "Цена" in col_name else '0'
+                except (ValueError, TypeError):
+                    pass
+    
+    wb.save(out_path)
     return True
 
 

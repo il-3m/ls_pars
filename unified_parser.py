@@ -503,7 +503,7 @@ class UnifiedParserApp(QMainWindow):
                 border: 1px solid #999999; 
                 background-color: white;
             }
-            QLineEdit#search_input, QComboBox#search_input, QLineEdit#filter_result_input, QLineEdit#filter_form_input, QLineEdit#filter_dose_input {
+            QLineEdit#search_input, QComboBox#search_input, QLineEdit#filter_result_input, QLineEdit#filter_form_input, QLineEdit#filter_dose_input, QComboBox#filter_result_input, QComboBox#filter_form_input, QComboBox#filter_dose_input {
                 background-color: #FFFDE7;
                 color: #000000;
             }
