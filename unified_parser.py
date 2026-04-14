@@ -436,11 +436,11 @@ class UnifiedParserWorker(QThread):
             last_processed_page = page
 
         # Обновляем текущую страницу для следующего поиска
-        # Если вышли из цикла по достижению лимита, продолжаем со следующей страницы
+        # Всегда продолжаем со следующей страницы после последней обработанной
         # Если дошли до конца всех страниц, помечаем как завершенные
-        if contracts_count >= search_limit and last_processed_page < total_pages:
+        if last_processed_page < total_pages:
             self.current_page = last_processed_page + 1
-            self.update_output.emit(f"Достигнут лимит поиска ({search_limit}), продолжение с страницы {self.current_page}")
+            self.update_output.emit(f"Продолжение с страницы {self.current_page} (найдено {contracts_count}/{search_limit})")
         else:
             self.current_page = total_pages + 1  # Помечаем, что все страницы просмотрены
             self.update_output.emit("Все страницы просмотрены")
@@ -562,11 +562,11 @@ class UnifiedParserWorker(QThread):
             last_processed_page = page
 
         # Обновляем текущую страницу для следующего поиска
-        # Если вышли из цикла по достижению лимита, продолжаем со следующей страницы
+        # Всегда продолжаем со следующей страницы после последней обработанной
         # Если дошли до конца всех страниц, помечаем как завершенные
-        if contracts_count >= search_limit and last_processed_page < total_pages:
+        if last_processed_page < total_pages:
             self.current_page = last_processed_page + 1
-            self.update_output.emit(f"Достигнут лимит поиска ({search_limit}), продолжение с страницы {self.current_page}")
+            self.update_output.emit(f"Продолжение с страницы {self.current_page} (найдено {contracts_count}/{search_limit})")
         else:
             self.current_page = total_pages + 1  # Помечаем, что все страницы просмотрены
             self.update_output.emit("Все страницы просмотрены")
