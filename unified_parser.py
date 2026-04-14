@@ -383,6 +383,7 @@ class UnifiedParserWorker(QThread):
 
         all_links = set()
         contracts_count = 0
+        last_processed_page = self.current_page
 
         # Цикл по страницам результатов (начиная с текущей позиции)
         for page in range(self.current_page, total_pages + 1):
@@ -431,12 +432,14 @@ class UnifiedParserWorker(QThread):
                     contracts_count += 1
                     self.link_found.emit(payment_url)
                     self.update_output.emit(f"Найдено контрактов: {contracts_count}/{search_limit}")
+            
+            last_processed_page = page
 
         # Обновляем текущую страницу для следующего поиска
-        # Если вышли из цикла по достижению лимита (page < total_pages), продолжаем со следующей страницы
+        # Если вышли из цикла по достижению лимита, продолжаем со следующей страницы
         # Если дошли до конца всех страниц, помечаем как завершенные
-        if contracts_count >= search_limit and page < total_pages:
-            self.current_page = page + 1
+        if contracts_count >= search_limit and last_processed_page < total_pages:
+            self.current_page = last_processed_page + 1
             self.update_output.emit(f"Достигнут лимит поиска ({search_limit}), продолжение с страницы {self.current_page}")
         else:
             self.current_page = total_pages + 1  # Помечаем, что все страницы просмотрены
@@ -509,6 +512,7 @@ class UnifiedParserWorker(QThread):
 
         all_links = set()
         contracts_count = 0
+        last_processed_page = next_page
 
         # Цикл по страницам результатов (начиная с next_page)
         for page in range(next_page, total_pages + 1):
@@ -554,12 +558,14 @@ class UnifiedParserWorker(QThread):
                     contracts_count += 1
                     self.link_found.emit(payment_url)
                     self.update_output.emit(f"Доп. найдено контрактов: {contracts_count}/{search_limit}")
+            
+            last_processed_page = page
 
         # Обновляем текущую страницу для следующего поиска
-        # Если вышли из цикла по достижению лимита (page < total_pages), продолжаем со следующей страницы
+        # Если вышли из цикла по достижению лимита, продолжаем со следующей страницы
         # Если дошли до конца всех страниц, помечаем как завершенные
-        if contracts_count >= search_limit and page < total_pages:
-            self.current_page = page + 1
+        if contracts_count >= search_limit and last_processed_page < total_pages:
+            self.current_page = last_processed_page + 1
             self.update_output.emit(f"Достигнут лимит поиска ({search_limit}), продолжение с страницы {self.current_page}")
         else:
             self.current_page = total_pages + 1  # Помечаем, что все страницы просмотрены
