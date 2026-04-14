@@ -1516,6 +1516,11 @@ EXTRACT_SCRIPT = r"""
     if (m) {
       return clean(m[1]);
     }
+    // Fallback: if no code but text looks like a country name, return it as-is
+    // This handles cases like "Российская Федерация" without the code
+    if (src.length > 2 && /[А-Яа-яA-Za-z]/.test(src)) {
+      return src;
+    }
     return '';
   };
 
@@ -1648,7 +1653,7 @@ EXTRACT_SCRIPT = r"""
   };
   
   const extractManufacturerCountryFromExpandedRow = (expandedRow) => {
-    if (!expandedRow) return '';
+    if (!expandedRow) return { countryOfOrigin: '', manufacturerCountry: '' };
     const sections = expandedRow.querySelectorAll('.blockInfo__section');
     let countryOfOrigin = '';
     let manufacturerCountry = '';
@@ -1671,8 +1676,8 @@ EXTRACT_SCRIPT = r"""
         manufacturerCountry = info;
       }
     }
-    // Return country of origin first, then manufacturer country as fallback
-    return countryOfOrigin || manufacturerCountry;
+    // Return both country of origin and manufacturer country
+    return { countryOfOrigin, manufacturerCountry };
   };
 
   const parseTopRow = (tr) => {
@@ -1687,9 +1692,12 @@ EXTRACT_SCRIPT = r"""
       rec.mnn = mnn;
     }
     
-    // Extract manufacturer country from expanded sibling row
-    const manufacturerCountry = extractManufacturerCountryFromExpandedRow(expandedRow);
-    if (manufacturerCountry) {
+    // Extract manufacturer country and country of origin from expanded sibling row
+    const { countryOfOrigin, manufacturerCountry } = extractManufacturerCountryFromExpandedRow(expandedRow);
+    if (countryOfOrigin) {
+      rec.country = shortCountry(countryOfOrigin);
+    }
+    if (manufacturerCountry && !rec.manufacturer_country) {
       rec.manufacturer_country = manufacturerCountry;
     }
 
@@ -1884,6 +1892,8 @@ EXTRACT_SCRIPT = r"""
               if (!lastRec.manufacturer_name) lastRec.manufacturer_name = info;
             } else if (titleUp.includes('СТРАНА ПРОИЗВОДИТЕЛЯ')) {
               if (!lastRec.manufacturer_country) lastRec.manufacturer_country = info;
+            } else if (titleUp.includes('СТРАНА ПРОИСХОЖДЕНИЯ')) {
+              if (!lastRec.country) lastRec.country = shortCountry(info);
             } else if (titleUp.includes('ВИД ПЕРВИЧНОЙ УПАКОВКИ')) {
               if (!lastRec.primary_package_type) lastRec.primary_package_type = info;
             } else if (titleUp.includes('КОЛИЧЕСТВО ЛЕКАРСТВЕННЫХ ФОРМ')) {
