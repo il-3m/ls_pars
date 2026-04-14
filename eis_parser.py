@@ -718,8 +718,15 @@ def _extract_dose(text: str) -> str:
 
 
 def _extract_country(text: str) -> str:
-    m = re.search(r"Страна происхождения\s*:\s*(.+)$", text or "", flags=re.IGNORECASE)
-    return _clean(m.group(1)) if m else ""
+    m = re.search(r"Страна происхождения\s*:\s*(.+)$", text or "", flags=re.IGNORECASE | re.MULTILINE)
+    if not m:
+        return ""
+    # Извлекаем текст после метки и находим первую страну с кодом (XXX (NNN))
+    country_text = _clean(m.group(1))
+    country_match = re.search(r"([A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё\s]*\(\d{3}\))", country_text)
+    if country_match:
+        return _clean(country_match.group(1))
+    return ""
 
 
 def _short_country(text: str) -> str:
@@ -1503,8 +1510,13 @@ EXTRACT_SCRIPT = r"""
 
   const shortCountry = (s) => {
     const src = clean(s);
+    if (!src) return '';
+    // Check for pattern with country code (XXX (NNN)) where XXX starts with a letter
     const m = src.match(rx.countryShort);
-    return clean(m ? m[1] : src);
+    if (m) {
+      return clean(m[1]);
+    }
+    return '';
   };
 
   const extractSum = (s) => clean((clean(s).match(rx.sum) || [])[1] || '');
