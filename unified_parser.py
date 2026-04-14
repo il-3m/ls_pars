@@ -214,16 +214,17 @@ class UnifiedParserWorker(QThread):
         self.driver = None
         self.found_links = []
         self.all_rows = []
+        self.current_page = 1
 
     def run(self):
         try:
             # Целевое количество контрактов в итоговой таблице
             target_contracts = self.max_contracts
-            # Общее количество для поиска = целевое * 2
-            search_limit = target_contracts * 2
+            # Общее количество для поиска = целевое * 3
+            search_limit = target_contracts * 3
             
             self.update_output.emit(f"Целевое количество контрактов: {target_contracts}")
-            self.update_output.emit(f"Максимальное количество для поиска: {search_limit}")
+            self.update_output.emit(f"Максимальное количество для поиска (за одну итерацию): {search_limit}")
             
             # Шаг 1: Поиск ссылок (первая волна)
             self.update_output.emit("=== Этап 1: Поиск ссылок ===")
@@ -241,11 +242,11 @@ class UnifiedParserWorker(QThread):
             self.parse_all_links(links)
             
             # Шаг 3: Если недостаточно контрактов в итоговой таблице, продолжаем поиск
-            while len(self.all_rows) < target_contracts and len(links) > 0:
-                self.update_output.emit(f"Достигнуто позиций: {len(self.all_rows)}, целевое: {target_contracts}")
+            while len(self.all_rows) < target_contracts:
+                self.update_output.emit(f"Достигнуто позиций в таблице: {len(self.all_rows)}, целевое: {target_contracts}")
                 self.update_output.emit("=== Этап 3: Дополнительный поиск ссылок ===")
                 
-                # Получаем следующую порцию ссылок
+                # Получаем следующую порцию ссылок (продолжение с предыдущего места)
                 new_links = self.find_more_links(search_limit=search_limit)
                 
                 if not new_links:
@@ -383,8 +384,8 @@ class UnifiedParserWorker(QThread):
         all_links = set()
         contracts_count = 0
 
-        # Цикл по страницам результатов
-        for page in range(1, total_pages + 1):
+        # Цикл по страницам результатов (начиная с текущей позиции)
+        for page in range(self.current_page, total_pages + 1):
             if contracts_count >= search_limit:
                 break
 
@@ -431,6 +432,9 @@ class UnifiedParserWorker(QThread):
                     self.link_found.emit(payment_url)
                     self.update_output.emit(f"Найдено контрактов: {contracts_count}/{search_limit}")
 
+        # Обновляем текущую страницу для следующего поиска
+        self.current_page = page if contracts_count >= search_limit else min(page + 1, total_pages)
+        
         self.found_links = list(all_links)
         return self.found_links
 
@@ -480,34 +484,26 @@ class UnifiedParserWorker(QThread):
                 except ValueError:
                     continue
             
-            # Находим текущую активную страницу
-            current_page = 1
-            for a in pagination:
-                if "active" in a.get_attribute("class") or "selected" in a.get_attribute("class"):
-                    try:
-                        current_page = int(a.text)
-                        break
-                    except (ValueError, TypeError):
-                        pass
+            total_pages = max(page_numbers) if page_numbers else self.current_page
             
-            # Если есть следующая страница, переходим на неё
-            if page_numbers and max(page_numbers) > current_page:
-                next_page = current_page + 1
-            else:
-                next_page = current_page + 1
+            # Начинаем с self.current_page (который был обновлён в find_links)
+            next_page = self.current_page
+            
+            if next_page > total_pages:
+                self.update_output.emit("Все страницы просмотрены. Завершение.")
+                return []
                 
-            total_pages = max(page_numbers) if page_numbers else current_page
             self.update_output.emit(f"Дополнительный поиск: страница {next_page}/{total_pages}")
             
         except Exception:
-            next_page = 1
-            total_pages = 1
-            self.update_output.emit("Не удалось определить страницу, начинаем сначала")
+            next_page = self.current_page
+            total_pages = self.current_page
+            self.update_output.emit("Не удалось определить страницу, используем текущую")
 
         all_links = set()
         contracts_count = 0
 
-        # Цикл по страницам результатов (начиная с current_page + 1)
+        # Цикл по страницам результатов (начиная с next_page)
         for page in range(next_page, total_pages + 1):
             if contracts_count >= search_limit:
                 break
@@ -551,6 +547,9 @@ class UnifiedParserWorker(QThread):
                     contracts_count += 1
                     self.link_found.emit(payment_url)
                     self.update_output.emit(f"Доп. найдено контрактов: {contracts_count}/{search_limit}")
+
+        # Обновляем текущую страницу для следующего поиска
+        self.current_page = page if contracts_count >= search_limit else min(page + 1, total_pages)
 
         return list(all_links)
 
