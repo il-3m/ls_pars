@@ -239,11 +239,11 @@ class UnifiedParserWorker(QThread):
             
             # Шаг 2: Парсинг каждой ссылки
             self.update_output.emit("=== Этап 2: Парсинг данных ===")
-            self.parse_all_links(links)
+            parsed_count = self.parse_all_links(links)
             
             # Шаг 3: Если недостаточно контрактов в итоговой таблице, продолжаем поиск
-            while len(self.all_rows) < target_contracts:
-                self.update_output.emit(f"Достигнуто позиций в таблице: {len(self.all_rows)}, целевое: {target_contracts}")
+            while parsed_count < target_contracts:
+                self.update_output.emit(f"Достигнуто позиций в таблице: {parsed_count}, целевое: {target_contracts}")
                 self.update_output.emit("=== Этап 3: Дополнительный поиск ссылок ===")
                 
                 # Получаем следующую порцию ссылок (продолжение с предыдущего места)
@@ -256,9 +256,9 @@ class UnifiedParserWorker(QThread):
                 self.update_output.emit(f"Найдено дополнительных ссылок: {len(new_links)}")
                 
                 # Парсим новые ссылки
-                self.parse_all_links(new_links)
+                parsed_count += self.parse_all_links(new_links)
             
-            self.update_output.emit(f"Всего обработано строк: {len(self.all_rows)}")
+            self.update_output.emit(f"Всего обработано строк: {parsed_count}")
             self.finished.emit(self.all_rows)
             
         except Exception as e:
@@ -578,6 +578,9 @@ class UnifiedParserWorker(QThread):
         
         Args:
             links: Список кортежей (payment_url, common_info_url)
+        
+        Returns:
+            Количество успешно обработанных строк
         """
         parser = EISParser(
             timeout_ms=self.timeout_ms,
@@ -587,7 +590,10 @@ class UnifiedParserWorker(QThread):
         )
         archive_dir = Path(self.archive_dir)
         
+        total_parsed = 0
+        
         async def parse_batch():
+            nonlocal total_parsed
             async with async_playwright() as p:
                 browser: Browser = await p.chromium.launch(headless=not self.headed)
                 context: BrowserContext = await browser.new_context(locale="ru-RU")
@@ -613,6 +619,7 @@ class UnifiedParserWorker(QThread):
                         for row in rows:
                             self.row_parsed.emit(row)
                         self.data_parsed.emit(len(rows))
+                        total_parsed += len(rows)
                         self.update_output.emit(f"  -> добавлено строк: {len(rows)}, всего: {len(self.all_rows)}")
                     except Exception as exc:
                         self.update_output.emit(f"  -> ошибка: {exc}")
@@ -635,6 +642,8 @@ class UnifiedParserWorker(QThread):
                 ok = export_xlsx(self.all_rows, Path(self.out_xlsx))
                 if ok:
                     self.update_output.emit(f"XLSX сохранен: {self.out_xlsx}")
+        
+        return total_parsed
 
 
 class UnifiedParserApp(QMainWindow):
