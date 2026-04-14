@@ -1650,6 +1650,9 @@ EXTRACT_SCRIPT = r"""
   const extractManufacturerCountryFromExpandedRow = (expandedRow) => {
     if (!expandedRow) return '';
     const sections = expandedRow.querySelectorAll('.blockInfo__section');
+    let countryOfOrigin = '';
+    let manufacturerCountry = '';
+    
     for (const sec of sections) {
       const titleEl = sec.querySelector('.section__title');
       const infoEl = sec.querySelector('.section__info');
@@ -1659,11 +1662,17 @@ EXTRACT_SCRIPT = r"""
       if (!info) continue;
       
       const titleUp = title.toUpperCase();
+      // Check for "Страна происхождения" (country of origin)
+      if (titleUp.includes('СТРАНА ПРОИСХОЖДЕНИЯ')) {
+        countryOfOrigin = info;
+      }
+      // Check for "Страна производителя" (manufacturer country)
       if (titleUp.includes('СТРАНА ПРОИЗВОДИТЕЛЯ')) {
-        return info;
+        manufacturerCountry = info;
       }
     }
-    return '';
+    // Return country of origin first, then manufacturer country as fallback
+    return countryOfOrigin || manufacturerCountry;
   };
 
   const parseTopRow = (tr) => {
@@ -1906,6 +1915,8 @@ EXTRACT_SCRIPT = r"""
         if (/МЕЖДУНАРОДНОЕ.*НАИМЕНОВАНИЕ/.test(titleUp)) {
           // Store in a temporary variable to be merged later
           window._tempMnn = window._tempMnn || info;
+        } else if (titleUp.includes('СТРАНА ПРОИСХОЖДЕНИЯ')) {
+          window._tempCountryOfOrigin = window._tempCountryOfOrigin || info;
         } else if (titleUp.includes('СТРАНА ПРОИЗВОДИТЕЛЯ')) {
           window._tempManufacturerCountry = window._tempManufacturerCountry || info;
         }
@@ -1917,6 +1928,11 @@ EXTRACT_SCRIPT = r"""
       if (!hasChevron) continue;
 
       const rec = blank();
+      
+      // Apply temporarily captured country of origin from expanded sections
+      if (window._tempCountryOfOrigin) {
+        rec.country = shortCountry(window._tempCountryOfOrigin);
+      }
       
       // Data columns start at index 1 (index 0 is chevron)
       // Map header indices to data indices: data_index = header_index + 1
@@ -1982,6 +1998,7 @@ EXTRACT_SCRIPT = r"""
         price_per_unit: clean(d.price_per_unit || top.price_per_unit),
         sum_rub: clean(d.sum_rub || top.sum_rub),
         nds: clean(d.nds || top.nds),
+        country: clean(d.country || top.country),
         holder_name: clean(d.holder_name || top.holder_name),
         manufacturer_name: clean(d.manufacturer_name || top.manufacturer_name),
         manufacturer_country: clean(d.manufacturer_country || top.manufacturer_country),
@@ -2023,6 +2040,8 @@ EXTRACT_SCRIPT = r"""
           const titleUp = title.toUpperCase();
           if (/МЕЖДУНАРОДНОЕ.*НАИМЕНОВАНИЕ/.test(titleUp)) {
             if (!top.mnn) top.mnn = info;
+          } else if (titleUp.includes('СТРАНА ПРОИСХОЖДЕНИЯ')) {
+            if (!top.country) top.country = shortCountry(info);
           } else if (titleUp.includes('СТРАНА ПРОИЗВОДИТЕЛЯ')) {
             if (!top.manufacturer_country) top.manufacturer_country = info;
           }
