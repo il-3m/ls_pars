@@ -1731,13 +1731,21 @@ EXTRACT_SCRIPT = r"""
 
     for (const token of tokens) {
       const up = token.toUpperCase();
+      
+      // Extract country from labeled format "Страна происхождения: XXX (code)"
       const countryLabel = token.match(/Страна происхождения\s*:\s*([^|]+)/i);
       if (!rec.country && countryLabel) {
         rec.country = shortCountry(countryLabel[1]);
       }
+      
+      // Extract country from format with code like "РОССИЯ (643)" or "АВСТРИЯ (040)"
       if (!rec.country && /\(\d{3}\)/.test(token)) {
-        rec.country = shortCountry(token);
+        // Skip tokens that look like product names (start with digit + dot)
+        if (!/^\d+\./.test(clean(token))) {
+          rec.country = shortCountry(token);
+        }
       }
+      
       if (!rec.okpd2 && rx.okpd2.test(token)) {
         rec.okpd2 = clean((token.match(rx.okpd2) || [])[1] || '');
         rec.category_ls = clean(token.replace(rx.okpd2, '').replace(/[()]/g, ''));
