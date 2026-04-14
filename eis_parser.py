@@ -718,16 +718,26 @@ def _extract_dose(text: str) -> str:
 
 
 def _extract_country(text: str) -> str:
-    m = re.search(r"Страна происхождения\s*:\s*(.+)$", text or "", flags=re.IGNORECASE)
-    return _clean(m.group(1)) if m else ""
+    m = re.search(r"Страна происхождения\s*:\s*(.+)$", text or "", flags=re.IGNORECASE | re.MULTILINE)
+    if not m:
+        return ""
+    # Извлекаем текст после метки и находим первую страну с кодом (XXX (NNN))
+    country_text = _clean(m.group(1))
+    country_match = re.search(r"([A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё\s]*\(\d{3}\))", country_text)
+    if country_match:
+        return _clean(country_match.group(1))
+    return ""
 
 
 def _short_country(text: str) -> str:
     src = _clean(text)
     if not src:
         return ""
-    m = re.search(r"([A-Za-zА-Яа-яЁё\-\s]+\(\d{3}\))", src)
-    return _clean(m.group(1)) if m else src
+    # Check for pattern with country code (XXX (NNN)) where XXX starts with a letter
+    m = re.search(r"([A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё\s]*\(\d{3}\))", src)
+    if m:
+        return _clean(m.group(1))
+    return ""
 
 
 def _looks_like_price(text: str) -> bool:
@@ -1500,8 +1510,18 @@ EXTRACT_SCRIPT = r"""
 
   const shortCountry = (s) => {
     const src = clean(s);
+    if (!src) return '';
+    // Check for pattern with country code (XXX (NNN)) where XXX starts with a letter
     const m = src.match(rx.countryShort);
-    return clean(m ? m[1] : src);
+    if (m) {
+      return clean(m[1]);
+    }
+    // Fallback: if no code but text looks like a country name, return it as-is
+    // This handles cases like "Российская Федерация" without the code
+    if (src.length > 2 && /[А-Яа-яA-Za-z]/.test(src)) {
+      return src;
+    }
+    return '';
   };
 
   const extractSum = (s) => clean((clean(s).match(rx.sum) || [])[1] || '');
@@ -1633,8 +1653,11 @@ EXTRACT_SCRIPT = r"""
   };
   
   const extractManufacturerCountryFromExpandedRow = (expandedRow) => {
-    if (!expandedRow) return '';
+    if (!expandedRow) return { countryOfOrigin: '', manufacturerCountry: '' };
     const sections = expandedRow.querySelectorAll('.blockInfo__section');
+    let countryOfOrigin = '';
+    let manufacturerCountry = '';
+    
     for (const sec of sections) {
       const titleEl = sec.querySelector('.section__title');
       const infoEl = sec.querySelector('.section__info');
@@ -1644,11 +1667,17 @@ EXTRACT_SCRIPT = r"""
       if (!info) continue;
       
       const titleUp = title.toUpperCase();
+      // Check for "Страна происхождения" (country of origin)
+      if (titleUp.includes('СТРАНА ПРОИСХОЖДЕНИЯ')) {
+        countryOfOrigin = info;
+      }
+      // Check for "Страна производителя" (manufacturer country)
       if (titleUp.includes('СТРАНА ПРОИЗВОДИТЕЛЯ')) {
-        return info;
+        manufacturerCountry = info;
       }
     }
-    return '';
+    // Return both country of origin and manufacturer country
+    return { countryOfOrigin, manufacturerCountry };
   };
 
   const parseTopRow = (tr) => {
@@ -1663,9 +1692,12 @@ EXTRACT_SCRIPT = r"""
       rec.mnn = mnn;
     }
     
-    // Extract manufacturer country from expanded sibling row
-    const manufacturerCountry = extractManufacturerCountryFromExpandedRow(expandedRow);
-    if (manufacturerCountry) {
+    // Extract manufacturer country and country of origin from expanded sibling row
+    const { countryOfOrigin, manufacturerCountry } = extractManufacturerCountryFromExpandedRow(expandedRow);
+    if (countryOfOrigin) {
+      rec.country = shortCountry(countryOfOrigin);
+    }
+    if (manufacturerCountry && !rec.manufacturer_country) {
       rec.manufacturer_country = manufacturerCountry;
     }
 
@@ -1731,13 +1763,21 @@ EXTRACT_SCRIPT = r"""
 
     for (const token of tokens) {
       const up = token.toUpperCase();
+      
+      // Extract country from labeled format "Страна происхождения: XXX (code)"
       const countryLabel = token.match(/Страна происхождения\s*:\s*([^|]+)/i);
       if (!rec.country && countryLabel) {
         rec.country = shortCountry(countryLabel[1]);
       }
+      
+      // Extract country from format with code like "РОССИЯ (643)" or "АВСТРИЯ (040)"
       if (!rec.country && /\(\d{3}\)/.test(token)) {
-        rec.country = shortCountry(token);
+        // Skip tokens that look like product names (start with digit + dot)
+        if (!/^\d+\./.test(clean(token))) {
+          rec.country = shortCountry(token);
+        }
       }
+      
       if (!rec.okpd2 && rx.okpd2.test(token)) {
         rec.okpd2 = clean((token.match(rx.okpd2) || [])[1] || '');
         rec.category_ls = clean(token.replace(rx.okpd2, '').replace(/[()]/g, ''));
@@ -1852,6 +1892,8 @@ EXTRACT_SCRIPT = r"""
               if (!lastRec.manufacturer_name) lastRec.manufacturer_name = info;
             } else if (titleUp.includes('СТРАНА ПРОИЗВОДИТЕЛЯ')) {
               if (!lastRec.manufacturer_country) lastRec.manufacturer_country = info;
+            } else if (titleUp.includes('СТРАНА ПРОИСХОЖДЕНИЯ')) {
+              if (!lastRec.country) lastRec.country = shortCountry(info);
             } else if (titleUp.includes('ВИД ПЕРВИЧНОЙ УПАКОВКИ')) {
               if (!lastRec.primary_package_type) lastRec.primary_package_type = info;
             } else if (titleUp.includes('КОЛИЧЕСТВО ЛЕКАРСТВЕННЫХ ФОРМ')) {
@@ -1883,6 +1925,8 @@ EXTRACT_SCRIPT = r"""
         if (/МЕЖДУНАРОДНОЕ.*НАИМЕНОВАНИЕ/.test(titleUp)) {
           // Store in a temporary variable to be merged later
           window._tempMnn = window._tempMnn || info;
+        } else if (titleUp.includes('СТРАНА ПРОИСХОЖДЕНИЯ')) {
+          window._tempCountryOfOrigin = window._tempCountryOfOrigin || info;
         } else if (titleUp.includes('СТРАНА ПРОИЗВОДИТЕЛЯ')) {
           window._tempManufacturerCountry = window._tempManufacturerCountry || info;
         }
@@ -1894,6 +1938,11 @@ EXTRACT_SCRIPT = r"""
       if (!hasChevron) continue;
 
       const rec = blank();
+      
+      // Apply temporarily captured country of origin from expanded sections
+      if (window._tempCountryOfOrigin) {
+        rec.country = shortCountry(window._tempCountryOfOrigin);
+      }
       
       // Data columns start at index 1 (index 0 is chevron)
       // Map header indices to data indices: data_index = header_index + 1
@@ -1959,6 +2008,7 @@ EXTRACT_SCRIPT = r"""
         price_per_unit: clean(d.price_per_unit || top.price_per_unit),
         sum_rub: clean(d.sum_rub || top.sum_rub),
         nds: clean(d.nds || top.nds),
+        country: clean(d.country || top.country),
         holder_name: clean(d.holder_name || top.holder_name),
         manufacturer_name: clean(d.manufacturer_name || top.manufacturer_name),
         manufacturer_country: clean(d.manufacturer_country || top.manufacturer_country),
@@ -2000,6 +2050,8 @@ EXTRACT_SCRIPT = r"""
           const titleUp = title.toUpperCase();
           if (/МЕЖДУНАРОДНОЕ.*НАИМЕНОВАНИЕ/.test(titleUp)) {
             if (!top.mnn) top.mnn = info;
+          } else if (titleUp.includes('СТРАНА ПРОИСХОЖДЕНИЯ')) {
+            if (!top.country) top.country = shortCountry(info);
           } else if (titleUp.includes('СТРАНА ПРОИЗВОДИТЕЛЯ')) {
             if (!top.manufacturer_country) top.manufacturer_country = info;
           }
