@@ -726,8 +726,11 @@ def _short_country(text: str) -> str:
     src = _clean(text)
     if not src:
         return ""
-    m = re.search(r"([A-Za-zА-Яа-яЁё\-\s]+\(\d{3}\))", src)
-    return _clean(m.group(1)) if m else src
+    # Check for pattern with country code (XXX (NNN)) where XXX starts with a letter
+    m = re.search(r"([A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё\s]*\(\d{3}\))", src)
+    if m:
+        return _clean(m.group(1))
+    return ""
 
 
 def _looks_like_price(text: str) -> bool:
