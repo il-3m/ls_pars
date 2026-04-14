@@ -214,12 +214,21 @@ class UnifiedParserWorker(QThread):
         self.driver = None
         self.found_links = []
         self.all_rows = []
+        self.current_page = 1
 
     def run(self):
         try:
-            # Шаг 1: Поиск ссылок
+            # Целевое количество контрактов в итоговой таблице
+            target_contracts = self.max_contracts
+            # Общее количество для поиска = целевое * 3
+            search_limit = target_contracts * 3
+            
+            self.update_output.emit(f"Целевое количество контрактов: {target_contracts}")
+            self.update_output.emit(f"Максимальное количество для поиска (за одну итерацию): {search_limit}")
+            
+            # Шаг 1: Поиск ссылок (первая волна)
             self.update_output.emit("=== Этап 1: Поиск ссылок ===")
-            links = self.find_links()
+            links = self.find_links(search_limit=search_limit)
             
             if not links:
                 self.update_output.emit("Ссылки не найдены!")
@@ -230,9 +239,26 @@ class UnifiedParserWorker(QThread):
             
             # Шаг 2: Парсинг каждой ссылки
             self.update_output.emit("=== Этап 2: Парсинг данных ===")
-            self.parse_all_links(links)
+            parsed_count = self.parse_all_links(links)
             
-            self.update_output.emit(f"Всего обработано строк: {len(self.all_rows)}")
+            # Шаг 3: Если недостаточно контрактов в итоговой таблице, продолжаем поиск
+            while parsed_count < target_contracts:
+                self.update_output.emit(f"Достигнуто позиций в таблице: {parsed_count}, целевое: {target_contracts}")
+                self.update_output.emit("=== Этап 3: Дополнительный поиск ссылок ===")
+                
+                # Получаем следующую порцию ссылок (продолжение с предыдущего места)
+                new_links = self.find_more_links(search_limit=search_limit)
+                
+                if not new_links:
+                    self.update_output.emit("Больше ссылок нет. Завершение.")
+                    break
+                
+                self.update_output.emit(f"Найдено дополнительных ссылок: {len(new_links)}")
+                
+                # Парсим новые ссылки
+                parsed_count += self.parse_all_links(new_links)
+            
+            self.update_output.emit(f"Всего обработано строк: {parsed_count}")
             self.finished.emit(self.all_rows)
             
         except Exception as e:
@@ -242,8 +268,15 @@ class UnifiedParserWorker(QThread):
             if self.driver:
                 self.driver.quit()
 
-    def find_links(self):
-        """Поиск ссылок на контракты (из link_finder.py)"""
+    def find_links(self, search_limit=None):
+        """Поиск ссылок на контракты (из link_finder.py)
+        
+        Args:
+            search_limit: Максимальное количество контрактов для поиска (по умолчанию self.max_contracts)
+        """
+        if search_limit is None:
+            search_limit = self.max_contracts
+            
         base_url = "https://zakupki.gov.ru/epz/contract/search/results.html"
         params = {
             "searchString": self.search_text,
@@ -350,10 +383,11 @@ class UnifiedParserWorker(QThread):
 
         all_links = set()
         contracts_count = 0
+        last_processed_page = self.current_page
 
-        # Цикл по страницам результатов
-        for page in range(1, total_pages + 1):
-            if contracts_count >= self.max_contracts:
+        # Цикл по страницам результатов (начиная с текущей позиции)
+        for page in range(self.current_page, total_pages + 1):
+            if contracts_count >= search_limit:
                 break
 
             params["pageNumber"] = str(page)
@@ -376,7 +410,7 @@ class UnifiedParserWorker(QThread):
             self.update_output.emit(f"Найдено уникальных ссылок на странице: {len(unique_links)}")
 
             for i, original_link in enumerate(unique_links, 1):
-                if contracts_count >= self.max_contracts:
+                if contracts_count >= search_limit:
                     break
 
                 # Проверка на CAPTCHA
@@ -397,16 +431,156 @@ class UnifiedParserWorker(QThread):
                     all_links.add((payment_url, common_info_url))
                     contracts_count += 1
                     self.link_found.emit(payment_url)
-                    self.update_output.emit(f"Найдено контрактов: {contracts_count}/{self.max_contracts}")
+                    self.update_output.emit(f"Найдено контрактов: {contracts_count}/{search_limit}")
+            
+            last_processed_page = page
 
+        # Обновляем текущую страницу для следующего поиска
+        # Всегда продолжаем со следующей страницы после последней обработанной
+        # Если дошли до конца всех страниц, помечаем как завершенные
+        if last_processed_page < total_pages:
+            self.current_page = last_processed_page + 1
+            self.update_output.emit(f"Продолжение с страницы {self.current_page} (найдено {contracts_count}/{search_limit})")
+        else:
+            self.current_page = total_pages + 1  # Помечаем, что все страницы просмотрены
+            self.update_output.emit("Все страницы просмотрены")
+        
         self.found_links = list(all_links)
         return self.found_links
+
+    def find_more_links(self, search_limit=None):
+        """Дополнительный поиск ссылок (продолжение с текущей страницы)
+        
+        Args:
+            search_limit: Максимальное количество контрактов для поиска
+        """
+        if search_limit is None:
+            search_limit = self.max_contracts
+            
+        # Продолжаем с текущей позиции - driver уже инициализирован
+        base_url = "https://zakupki.gov.ru/epz/contract/search/results.html"
+        params = {
+            "searchString": self.search_text,
+            "morphology": "on",
+            "fz44": "on",
+            "contractStageList": "1",
+            "contractStageList_1": "on",
+            "contractDateFrom": self.date_from,
+            "contractDateTo": self.date_to,
+            "sortBy": "UPDATE_DATE",
+            "pageNumber": "1",
+            "sortDirection": "false",
+            "recordsPerPage": "_10",
+            "strictEqual": "true"
+        }
+
+        # Фильтры: приоритет Росунимеду, затем Москва
+        if self.rosunimed_only:
+            full_customer_id = '14269:ФЕДЕРАЛЬНОЕ ГОСУДАРСТВЕННОЕ БЮДЖЕТНОЕ ОБРАЗОВАТЕЛЬНОЕ УЧРЕЖДЕНИЕ ВЫСШЕГО ОБРАЗОВАНИЯ "РОССИЙСКИЙ УНИВЕРСИТЕТ МЕДИЦИНЫ" МИНИСТЕРСТВА ЗДРАВООХРАНЕНИЯ РОССИЙСКОЙ ФЕДЕРАЦИИzZ03731000459zZ666998zZ63203zZ7707082145zZzZ770701001zZ1027739808898'
+            params["customerIdOrg"] = full_customer_id
+        elif self.moscow_only:
+            params["customerPlace"] = "77000000000,50000000000"
+            params["customerPlaceCodes"] = "77000000000,50000000000"
+
+        # Определяем текущую страницу и продолжаем
+        try:
+            pagination = self.driver.find_elements(By.CSS_SELECTOR, ".paginator a")
+            page_numbers = []
+            for a in pagination:
+                try:
+                    txt = a.text.strip()
+                    if txt.isdigit():
+                        page_numbers.append(int(txt))
+                except ValueError:
+                    continue
+            
+            total_pages = max(page_numbers) if page_numbers else self.current_page
+            
+            # Начинаем с self.current_page (который был обновлён в find_links)
+            next_page = self.current_page
+            
+            if next_page > total_pages:
+                self.update_output.emit("Все страницы просмотрены. Завершение.")
+                return []
+                
+            self.update_output.emit(f"Дополнительный поиск: страница {next_page}/{total_pages}")
+            
+        except Exception:
+            next_page = self.current_page
+            total_pages = self.current_page
+            self.update_output.emit("Не удалось определить страницу, используем текущую")
+
+        all_links = set()
+        contracts_count = 0
+        last_processed_page = next_page
+
+        # Цикл по страницам результатов (начиная с next_page)
+        for page in range(next_page, total_pages + 1):
+            if contracts_count >= search_limit:
+                break
+
+            params["pageNumber"] = str(page)
+            url = base_url + "?" + urllib.parse.urlencode(params, safe='', quote_via=urllib.parse.quote_plus)
+            self.driver.get(url)
+            self.update_output.emit(f"Доп. страница {page}/{total_pages}")
+            progress = 10 + int((page / total_pages) * 20)
+            self.update_progress.emit(progress)
+
+            # Извлечение всех ссылок
+            links = self.driver.find_elements(By.CSS_SELECTOR, "a[href]")
+            original_links = [
+                link.get_attribute("href")
+                for link in links
+                if link.get_attribute("href") and "contract/contractCard/common-info.html" in link.get_attribute("href")
+            ]
+            
+            unique_links = list(set(original_links))
+            self.update_output.emit(f"Найдено уникальных ссылок на странице: {len(unique_links)}")
+
+            for i, original_link in enumerate(unique_links, 1):
+                if contracts_count >= search_limit:
+                    break
+
+                # Проверка на CAPTCHA
+                if "captcha" in self.driver.page_source.lower():
+                    self.update_output.emit("Обнаружена CAPTCHA!")
+                    time.sleep(2)
+
+                # Извлечение номера реестра из оригинальной ссылки
+                reestr_match = re.search(r'reestrNumber=([0-9]+)', original_link)
+                if reestr_match:
+                    reestr_number = reestr_match.group(1)
+                    
+                    common_info_url = f"https://zakupki.gov.ru/epz/contract/contractCard/common-info.html?reestrNumber={reestr_number}"
+                    payment_url = f"https://zakupki.gov.ru/epz/contract/contractCard/payment-info-and-target-of-order.html?reestrNumber={reestr_number}"
+                    
+                    all_links.add((payment_url, common_info_url))
+                    contracts_count += 1
+                    self.link_found.emit(payment_url)
+                    self.update_output.emit(f"Доп. найдено контрактов: {contracts_count}/{search_limit}")
+            
+            last_processed_page = page
+
+        # Обновляем текущую страницу для следующего поиска
+        # Всегда продолжаем со следующей страницы после последней обработанной
+        # Если дошли до конца всех страниц, помечаем как завершенные
+        if last_processed_page < total_pages:
+            self.current_page = last_processed_page + 1
+            self.update_output.emit(f"Продолжение с страницы {self.current_page} (найдено {contracts_count}/{search_limit})")
+        else:
+            self.current_page = total_pages + 1  # Помечаем, что все страницы просмотрены
+            self.update_output.emit("Все страницы просмотрены")
+
+        return list(all_links)
 
     def parse_all_links(self, links: List[tuple]):
         """Парсинг всех ссылок и накопление данных
         
         Args:
             links: Список кортежей (payment_url, common_info_url)
+        
+        Returns:
+            Количество успешно обработанных строк
         """
         parser = EISParser(
             timeout_ms=self.timeout_ms,
@@ -416,7 +590,10 @@ class UnifiedParserWorker(QThread):
         )
         archive_dir = Path(self.archive_dir)
         
+        total_parsed = 0
+        
         async def parse_batch():
+            nonlocal total_parsed
             async with async_playwright() as p:
                 browser: Browser = await p.chromium.launch(headless=not self.headed)
                 context: BrowserContext = await browser.new_context(locale="ru-RU")
@@ -442,6 +619,7 @@ class UnifiedParserWorker(QThread):
                         for row in rows:
                             self.row_parsed.emit(row)
                         self.data_parsed.emit(len(rows))
+                        total_parsed += len(rows)
                         self.update_output.emit(f"  -> добавлено строк: {len(rows)}, всего: {len(self.all_rows)}")
                     except Exception as exc:
                         self.update_output.emit(f"  -> ошибка: {exc}")
@@ -464,6 +642,8 @@ class UnifiedParserWorker(QThread):
                 ok = export_xlsx(self.all_rows, Path(self.out_xlsx))
                 if ok:
                     self.update_output.emit(f"XLSX сохранен: {self.out_xlsx}")
+        
+        return total_parsed
 
 
 class UnifiedParserApp(QMainWindow):
@@ -788,10 +968,12 @@ class UnifiedParserApp(QMainWindow):
         stats_layout = QVBoxLayout()
         stats_layout.setSpacing(4)
         
-        self.total_links_label = QLabel("Контрактов найдено: 0")
+        self.total_links_label = QLabel("Контрактов найдено (всего): 0")
+        self.selected_contracts_label = QLabel("Контрактов отобрано: 0")
         self.filtered_count_label = QLabel("Отфильтровано позиций: 0")
         
         stats_layout.addWidget(self.total_links_label)
+        stats_layout.addWidget(self.selected_contracts_label)
         stats_layout.addWidget(self.filtered_count_label)
         stats_group.setLayout(stats_layout)
         left_layout.addWidget(stats_group)
@@ -1026,7 +1208,8 @@ class UnifiedParserApp(QMainWindow):
             # Очищаем лог
             self.log_text.clear()
             # Сбрасываем счетчики
-            self.total_links_label.setText("Контрактов найдено: 0")
+            self.total_links_label.setText("Контрактов найдено (всего): 0")
+            self.selected_contracts_label.setText("Контрактов отобрано: 0")
             self.filtered_count_label.setText("Отфильтровано позиций: 0")
             # Очищаем прогресс бар
             self.progress_bar.setValue(0)
@@ -1245,14 +1428,31 @@ class UnifiedParserApp(QMainWindow):
         """Обработка найденной ссылки"""
         self.links_list.addItem(link)
         count = self.links_list.count()
-        self.total_links_label.setText(f"Контрактов найдено: {count}")
+        self.total_links_label.setText(f"Контрактов найдено (всего): {count}")
 
     def on_data_parsed(self, count):
         """Обработка добавленных строк данных"""
         current_total = len(self.all_rows)
         self.all_rows.extend([{}] * count)  # Просто для подсчета
-        # Обновляем счетчик отфильтрованных позиций
+        # Обновляем счетчик отфильтрованных позиций и отобранных контрактов
         self.update_filtered_count()
+        
+        # Обновляем счетчик отобранных контрактов (уникальные контракты с данными)
+        selected_count = 0
+        seen_contracts = set()
+        for row in range(self.results_table.rowCount()):
+            if not self.results_table.isRowHidden(row):
+                # Получаем номер контракта из первой колонки или URL
+                for col in range(self.results_table.columnCount()):
+                    item = self.results_table.item(row, col)
+                    if item:
+                        val = str(item.text())
+                        if 'reestrNumber=' in val or (col == 0 and val):
+                            if val not in seen_contracts:
+                                seen_contracts.add(val)
+                                selected_count += 1
+                            break
+        self.selected_contracts_label.setText(f"Контрактов отобрано: {selected_count}")
 
     def update_filtered_count(self):
         """Обновление счетчика отфильтрованных позиций"""
@@ -1277,7 +1477,7 @@ class UnifiedParserApp(QMainWindow):
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Information)
             msg.setText("Парсинг завершен успешно!")
-            msg.setInformativeText(f"Найдено контрактов: {self.links_list.count()}\nРаспаршено строк: {len(rows)}")
+            msg.setInformativeText(f"Найдено контрактов: {self.links_list.count()}\nПроанализировано позиций: {len(rows)}")
             msg.setStandardButtons(QMessageBox.Ok)
             msg.exec_()
         else:
