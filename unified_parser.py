@@ -212,6 +212,7 @@ class UnifiedParserWorker(QThread):
         self.page_load_delay = page_load_delay
         self.expand_delay = expand_delay
         self.driver = None
+        self.filter_before_search = filter_before_search or {}  # Фильтр для проверки при подсчете
         self.found_links = []
         self.all_rows = []
         self.current_page = 1
@@ -245,7 +246,7 @@ class UnifiedParserWorker(QThread):
             # Проверяем количество уникальных контрактов через сигнал
             while True:
                 # Запрашиваем текущее количество уникальных контрактов
-                unique_count = self.get_unique_contracts_count()
+                unique_count = self.get_filtered_unique_contracts_count(self.filter_before_search)
                 self.update_output.emit(f"Уникальных контрактов в таблице: {unique_count}, целевое: {target_contracts}")
                 
                 if unique_count >= target_contracts:
@@ -266,7 +267,7 @@ class UnifiedParserWorker(QThread):
                 # Парсим новые ссылки
                 self.parse_all_links(new_links)
             
-            final_count = self.get_unique_contracts_count()
+            final_count = self.get_filtered_unique_contracts_count(self.filter_before_search)
             self.update_output.emit(f"Всего уникальных контрактов: {final_count}")
             self.finished.emit(self.all_rows)
             
@@ -281,6 +282,37 @@ class UnifiedParserWorker(QThread):
         """Подсчет количества уникальных контрактов по номеру контракта"""
         contract_numbers = set()
         for row in self.all_rows:
+            contract_num = row.get('contract_number', '').strip()
+            if contract_num:
+                contract_numbers.add(contract_num)
+        return len(contract_numbers)
+
+    def get_filtered_unique_contracts_count(self, filter_before_search=None):
+        """Подсчет количества уникальных контрактов с учетом фильтра
+        
+        Args:
+            filter_before_search: Словарь с фильтрами {'mnn': ..., 'form': ..., 'dose': ...}
+        """
+        contract_numbers = set()
+        for row in self.all_rows:
+            # Применяем фильтр если он указан
+            if filter_before_search:
+                mnn_value = row.get('mnn', '').lower()
+                form_value = row.get('release_form', '').lower()
+                dose_value = row.get('dose', '').lower()
+
+                filter_mnn = filter_before_search.get('mnn', '').lower()
+                filter_form = filter_before_search.get('form', '').lower()
+                filter_dose = filter_before_search.get('dose', '').lower()
+
+                # Проверяем все три фильтра (если фильтр пустой - игнорируем)
+                mnn_match = not filter_mnn or filter_mnn in mnn_value
+                form_match = not filter_form or filter_form in form_value
+                dose_match = not filter_dose or filter_dose in dose_value
+
+                if not (mnn_match and form_match and dose_match):
+                    continue
+
             contract_num = row.get('contract_number', '').strip()
             if contract_num:
                 contract_numbers.add(contract_num)
