@@ -212,6 +212,7 @@ class UnifiedParserWorker(QThread):
         self.page_load_delay = page_load_delay
         self.expand_delay = expand_delay
         self.driver = None
+        self.filter_before_search = filter_before_search or {}  # Фильтр для проверки при подсчете
         self.found_links = []
         self.all_rows = []
         self.current_page = 1
@@ -239,11 +240,19 @@ class UnifiedParserWorker(QThread):
             
             # Шаг 2: Парсинг каждой ссылки
             self.update_output.emit("=== Этап 2: Парсинг данных ===")
-            parsed_count = self.parse_all_links(links)
+            self.parse_all_links(links)
             
             # Шаг 3: Если недостаточно контрактов в итоговой таблице, продолжаем поиск
-            while parsed_count < target_contracts:
-                self.update_output.emit(f"Достигнуто позиций в таблице: {parsed_count}, целевое: {target_contracts}")
+            # Проверяем количество уникальных контрактов через сигнал
+            while True:
+                # Запрашиваем текущее количество уникальных контрактов
+                unique_count = self.get_filtered_unique_contracts_count(self.filter_before_search)
+                self.update_output.emit(f"Уникальных контрактов в таблице: {unique_count}, целевое: {target_contracts}")
+                
+                if unique_count >= target_contracts:
+                    self.update_output.emit("Достигнуто целевое количество контрактов. Завершение.")
+                    break
+                
                 self.update_output.emit("=== Этап 3: Дополнительный поиск ссылок ===")
                 
                 # Получаем следующую порцию ссылок (продолжение с предыдущего места)
@@ -256,9 +265,10 @@ class UnifiedParserWorker(QThread):
                 self.update_output.emit(f"Найдено дополнительных ссылок: {len(new_links)}")
                 
                 # Парсим новые ссылки
-                parsed_count += self.parse_all_links(new_links)
+                self.parse_all_links(new_links)
             
-            self.update_output.emit(f"Всего обработано строк: {parsed_count}")
+            final_count = self.get_filtered_unique_contracts_count(self.filter_before_search)
+            self.update_output.emit(f"Всего уникальных контрактов: {final_count}")
             self.finished.emit(self.all_rows)
             
         except Exception as e:
@@ -267,6 +277,46 @@ class UnifiedParserWorker(QThread):
         finally:
             if self.driver:
                 self.driver.quit()
+
+    def get_unique_contracts_count(self):
+        """Подсчет количества уникальных контрактов по номеру контракта"""
+        contract_numbers = set()
+        for row in self.all_rows:
+            contract_num = row.get('contract_number', '').strip()
+            if contract_num:
+                contract_numbers.add(contract_num)
+        return len(contract_numbers)
+
+    def get_filtered_unique_contracts_count(self, filter_before_search=None):
+        """Подсчет количества уникальных контрактов с учетом фильтра
+        
+        Args:
+            filter_before_search: Словарь с фильтрами {'mnn': ..., 'form': ..., 'dose': ...}
+        """
+        contract_numbers = set()
+        for row in self.all_rows:
+            # Применяем фильтр если он указан
+            if filter_before_search:
+                mnn_value = row.get('mnn', '').lower()
+                form_value = row.get('release_form', '').lower()
+                dose_value = row.get('dose', '').lower()
+
+                filter_mnn = filter_before_search.get('mnn', '').lower()
+                filter_form = filter_before_search.get('form', '').lower()
+                filter_dose = filter_before_search.get('dose', '').lower()
+
+                # Проверяем все три фильтра (если фильтр пустой - игнорируем)
+                mnn_match = not filter_mnn or filter_mnn in mnn_value
+                form_match = not filter_form or filter_form in form_value
+                dose_match = not filter_dose or filter_dose in dose_value
+
+                if not (mnn_match and form_match and dose_match):
+                    continue
+
+            contract_num = row.get('contract_number', '').strip()
+            if contract_num:
+                contract_numbers.add(contract_num)
+        return len(contract_numbers)
 
     def find_links(self, search_limit=None):
         """Поиск ссылок на контракты (из link_finder.py)
@@ -632,7 +682,7 @@ class UnifiedParserWorker(QThread):
         
         asyncio.run(parse_batch())
         
-        # Экспорт результатов
+        # Экспорт результатов после каждой партии ссылок
         if self.all_rows:
             csv_path = Path(self.out_csv)
             export_csv(self.all_rows, csv_path)
@@ -1437,21 +1487,20 @@ class UnifiedParserApp(QMainWindow):
         # Обновляем счетчик отфильтрованных позиций и отобранных контрактов
         self.update_filtered_count()
         
-        # Обновляем счетчик отобранных контрактов (уникальные контракты с данными)
+        # Обновляем счетчик отобранных контрактов (уникальные номера контрактов)
         selected_count = 0
         seen_contracts = set()
+        contract_number_col = FIELD_ORDER.index('contract_number')
+        
         for row in range(self.results_table.rowCount()):
             if not self.results_table.isRowHidden(row):
-                # Получаем номер контракта из первой колонки или URL
-                for col in range(self.results_table.columnCount()):
-                    item = self.results_table.item(row, col)
-                    if item:
-                        val = str(item.text())
-                        if 'reestrNumber=' in val or (col == 0 and val):
-                            if val not in seen_contracts:
-                                seen_contracts.add(val)
-                                selected_count += 1
-                            break
+                item = self.results_table.item(row, contract_number_col)
+                if item:
+                    contract_num = str(item.text()).strip()
+                    if contract_num and contract_num not in seen_contracts:
+                        seen_contracts.add(contract_num)
+                        selected_count += 1
+        
         self.selected_contracts_label.setText(f"Контрактов отобрано: {selected_count}")
 
     def update_filtered_count(self):
