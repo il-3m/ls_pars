@@ -456,6 +456,11 @@ class UnifiedParserWorker(QThread):
         """
         if search_limit is None:
             search_limit = self.max_contracts
+        
+        # Проверяем, все ли страницы уже просмотрены
+        if self.current_page > 1000:  # Специальная метка "все страницы просмотрены"
+            self.update_output.emit("Все страницы уже просмотрены. Завершение.")
+            return []
             
         # Продолжаем с текущей позиции - driver уже инициализирован
         base_url = "https://zakupki.gov.ru/epz/contract/search/results.html"
@@ -494,21 +499,24 @@ class UnifiedParserWorker(QThread):
                 except ValueError:
                     continue
             
-            total_pages = max(page_numbers) if page_numbers else self.current_page
+            total_pages = max(page_numbers) if page_numbers else 1
             
             # Начинаем с self.current_page (который был обновлён в find_links)
             next_page = self.current_page
             
             if next_page > total_pages:
-                self.update_output.emit("Все страницы просмотрены. Завершение.")
+                self.update_output.emit(f"Все страницы просмотрены (страница {next_page} из {total_pages}). Завершение.")
+                # Помечаем что все страницы просмотрены
+                self.current_page = 999999
                 return []
                 
             self.update_output.emit(f"Дополнительный поиск: страница {next_page}/{total_pages}")
             
-        except Exception:
+        except Exception as e:
+            self.update_output.emit(f"Ошибка определения страницы: {e}. Используем текущую ({self.current_page})")
             next_page = self.current_page
-            total_pages = self.current_page
-            self.update_output.emit("Не удалось определить страницу, используем текущую")
+            total_pages = self.current_page + 1  # Предполагаем что есть ещё хотя бы одна страница
+            # Пробуем загрузить следующую страницу для проверки
 
         all_links = set()
         contracts_count = 0
