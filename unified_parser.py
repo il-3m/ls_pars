@@ -259,8 +259,8 @@ class UnifiedParserWorker(QThread):
                 # Считаем уникальные контракты (по номеру реестра)
                 unique_contract_numbers = set()
                 for row in self.all_rows:
-                    if 'reg_number' in row and row['reg_number']:
-                        unique_contract_numbers.add(row['reg_number'])
+                    if 'reestr_number' in row and row['reestr_number']:
+                        unique_contract_numbers.add(row['reestr_number'])
                 total_unique_contracts = len(unique_contract_numbers)
                 
                 self.update_output.emit(f"Добавлено строк: {contracts_after - contracts_before}, всего строк: {len(self.all_rows)}")
@@ -1475,7 +1475,7 @@ class UnifiedParserApp(QMainWindow):
         unique_contract_numbers = set()
         for row in range(self.results_table.rowCount()):
             if not self.results_table.isRowHidden(row):
-                item = self.results_table.item(row, FIELD_ORDER.index('reg_number'))
+                item = self.results_table.item(row, FIELD_ORDER.index('reestr_number'))
                 if item and item.text():
                     unique_contract_numbers.add(item.text())
         self.contracts_selected_label.setText(f"Контрактов отобрано: {len(unique_contract_numbers)}")
@@ -1496,8 +1496,8 @@ class UnifiedParserApp(QMainWindow):
             # Получаем количество уникальных контрактов
             unique_contract_numbers = set()
             for row in rows:
-                if 'reg_number' in row and row['reg_number']:
-                    unique_contract_numbers.add(row['reg_number'])
+                if 'reestr_number' in row and row['reestr_number']:
+                    unique_contract_numbers.add(row['reestr_number'])
             
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Information)
