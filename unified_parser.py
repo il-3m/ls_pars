@@ -58,7 +58,50 @@ import threading
 import glob
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Tuple
+
+
+def parse_volume_string(volume_str: str) -> Optional[float]:
+    """
+    Извлекает числовое значение объема из строки.
+    Удаляет лишние символы, пробелы, единицы измерения.
+    
+    Примеры:
+        "100 шт." -> 100.0
+        "1 000,5" -> 1000.5
+        "500мл" -> 500.0
+        "250 mg" -> 250.0
+    """
+    if not volume_str:
+        return None
+    
+    # Преобразуем в строку и очищаем
+    volume_str = str(volume_str).strip()
+    
+    if not volume_str:
+        return None
+    
+    # Заменяем запятую на точку для десятичных дробей
+    volume_str = volume_str.replace(',', '.')
+    
+    # Удаляем все буквы (русские и английские) и символы единиц измерения
+    # Оставляем только цифры, точки, пробелы и минус
+    cleaned = re.sub(r'[a-zA-Zа-яА-ЯёЁ\.°%\*\^\(\)\[\]{}:;!?&@#\$~`|"\'\\]', '', volume_str)
+    
+    # Удаляем пробелы между цифрами (например "1 000" -> "1000")
+    cleaned = cleaned.replace(' ', '')
+    
+    # Удаляем множественные точки (оставляем только одну как десятичный разделитель)
+    # Находим первую точку, остальные удаляем
+    if cleaned.count('.') > 1:
+        parts = cleaned.split('.')
+        cleaned = parts[0] + '.' + ''.join(parts[1:])
+    
+    try:
+        result = float(cleaned)
+        return result if result > 0 else None
+    except (ValueError, TypeError):
+        return None
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QWidget,
@@ -1182,6 +1225,7 @@ class UnifiedParserApp(QMainWindow):
         # Подключаем кнопки расчета
         self.nmcc_volume_btn.clicked.connect(self.calculate_nmcc_by_volume)
         self.nmcc_avg_btn.clicked.connect(self.calculate_nmcc_by_avg_price)
+        self.nmcc_optimal_btn.clicked.connect(self.calculate_nmcc_optimal)
         
         right_layout.addWidget(self.tables_tab_widget)
         right_panel.setLayout(right_layout)
@@ -1704,11 +1748,10 @@ class UnifiedParserApp(QMainWindow):
                 if not self.results_table.isRowHidden(row):
                     item = self.results_table.item(row, qty_col_index)
                     if item and item.text():
-                        try:
-                            qty = float(item.text().replace(',', '.'))
+                        # Используем функцию parse_volume_string для корректного парсинга объема
+                        qty = parse_volume_string(item.text())
+                        if qty is not None:
                             rows_with_qty.append((row, qty))
-                        except ValueError:
-                            continue
             
             if len(rows_with_qty) < 3:
                 QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено позиций: {len(rows_with_qty)}, требуется минимум 3")
@@ -1731,6 +1774,144 @@ class UnifiedParserApp(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка при расчете НМЦК по объему: {e}")
             logging.error(f"Ошибка calculate_nmcc_by_volume: {e}", exc_info=True)
+    
+    def calculate_nmcc_optimal(self):
+        """Оптимальный НМЦК: сбалансированный выбор 3 позиций по цене и объему, 
+        наиболее близким к указанным пользователем свойствам"""
+        try:
+            # Получаем целевые значения от пользователя
+            volume_str = self.nmcc_volume_input.text().strip()
+            
+            prices = []
+            for input_field in [self.nmcc_price1_input, self.nmcc_price2_input, self.nmcc_price3_input]:
+                price_str = input_field.text().strip()
+                if price_str:
+                    try:
+                        prices.append(float(price_str.replace(',', '.')))
+                    except ValueError:
+                        continue
+            
+            # Проверяем, что введены хотя бы какие-то данные
+            if not volume_str and len(prices) == 0:
+                QMessageBox.warning(self, "Внимание", 
+                    "Введите объем и/или цены для расчета оптимального НМЦК")
+                return
+            
+            # Вычисляем целевые значения
+            target_volume = None
+            if volume_str:
+                target_volume = float(volume_str.replace(',', '.'))
+            
+            target_avg_price = None
+            if len(prices) > 0:
+                target_avg_price = sum(prices) / len(prices)
+            
+            # Находим индексы колонок
+            qty_col_index = FIELD_ORDER.index('qty_consumer_units')
+            price_col_index = FIELD_ORDER.index('price_per_unit')
+            
+            # Собираем все видимые строки с данными об объеме и цене
+            rows_with_data = []
+            for row in range(self.results_table.rowCount()):
+                if not self.results_table.isRowHidden(row):
+                    qty_item = self.results_table.item(row, qty_col_index)
+                    price_item = self.results_table.item(row, price_col_index)
+                    
+                    qty = None
+                    price = None
+                    
+                    if qty_item and qty_item.text():
+                        qty = parse_volume_string(qty_item.text())
+                    
+                    if price_item and price_item.text():
+                        try:
+                            price = float(price_item.text().replace(',', '.'))
+                        except ValueError:
+                            continue
+                    
+                    # Добавляем строку только если есть хотя бы одно из значений
+                    if qty is not None or price is not None:
+                        rows_with_data.append((row, qty, price))
+            
+            if len(rows_with_data) < 3:
+                QMessageBox.warning(self, "Внимание", 
+                    f"Недостаточно данных для расчета. Найдено позиций: {len(rows_with_data)}, требуется минимум 3")
+                return
+            
+            # Вычисляем нормализованные отклонения для каждой позиции
+            # Используем комбинированный скоринг с весами
+            
+            # Сначала найдем диапазоны для нормализации
+            volumes = [r[1] for r in rows_with_data if r[1] is not None]
+            prices_list = [r[2] for r in rows_with_data if r[2] is not None]
+            
+            volume_range = max(volumes) - min(volumes) if len(volumes) > 1 else 1
+            price_range = max(prices_list) - min(prices_list) if len(prices_list) > 1 else 1
+            
+            # Избегаем деления на ноль
+            if volume_range == 0:
+                volume_range = 1
+            if price_range == 0:
+                price_range = 1
+            
+            # Вычисляем скор для каждой строки
+            scored_rows = []
+            for row_idx, qty, price in rows_with_data:
+                score = 0.0
+                factors_count = 0
+                
+                # Оценка по объему (если задан целевой объем)
+                if target_volume is not None and qty is not None:
+                    volume_diff = abs(qty - target_volume)
+                    # Нормализуем разницу объема
+                    normalized_volume_diff = volume_diff / volume_range
+                    # Преобразуем в score (чем меньше разница, тем выше score)
+                    volume_score = 1.0 - min(normalized_volume_diff, 1.0)
+                    score += volume_score
+                    factors_count += 1
+                
+                # Оценка по цене (если задана целевая цена)
+                if target_avg_price is not None and price is not None:
+                    price_diff = abs(price - target_avg_price)
+                    # Нормализуем разницу цены
+                    normalized_price_diff = price_diff / price_range
+                    # Преобразуем в score (чем меньше разница, тем выше score)
+                    price_score = 1.0 - min(normalized_price_diff, 1.0)
+                    score += price_score
+                    factors_count += 1
+                
+                # Если ни один фактор не был учтен (должно быть невозможно благодаря проверкам выше)
+                if factors_count == 0:
+                    score = 0.0
+                else:
+                    # Усредняем score по всем факторам
+                    score = score / factors_count
+                
+                scored_rows.append((row_idx, score, qty, price))
+            
+            # Сортируем по убыванию score (лучшие позиции первыми)
+            scored_rows.sort(key=lambda x: x[1], reverse=True)
+            
+            # Берем 3 лучших позиции
+            top_3_rows = [(r[0], r[1]) for r in scored_rows[:3]]  # (row_idx, score)
+            
+            # Заполняем таблицу НМЦК
+            self.fill_nmcc_table(top_3_rows)
+            
+            # Переключаемся на вкладку НМЦК
+            self.tables_tab_widget.setCurrentIndex(1)
+            
+            # Формируем лог
+            log_msg = f"Оптимальный НМЦК: выбрано 3 позиции"
+            if target_volume is not None:
+                log_msg += f" (целевой объем={target_volume})"
+            if target_avg_price is not None:
+                log_msg += f" (целевая средняя цена={target_avg_price:.2f}₽)"
+            self.append_log(log_msg)
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при расчете оптимального НМЦК: {e}")
+            logging.error(f"Ошибка calculate_nmcc_optimal: {e}", exc_info=True)
     
     def calculate_nmcc_by_avg_price(self):
         """Расчет НМЦК приближенный к КП: найти 3 позиции со средней ценой, наиболее близкой к средней по введенным КП"""
