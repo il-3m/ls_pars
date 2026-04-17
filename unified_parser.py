@@ -1231,7 +1231,84 @@ class UnifiedParserApp(QMainWindow):
         manual_nmcc_tab_layout.setSpacing(8)
         manual_nmcc_tab_layout.setContentsMargins(8, 8, 8, 8)
         
-        # Таблица для ручного подбора НМЦК (аналогична таблице НМЦК, но без кнопок расчета)
+        # Верхняя панель с двумя колонками: ввод данных и итоговые данные (аналогично вкладке НМЦК)
+        manual_top_panel = QHBoxLayout()
+        manual_top_panel.setSpacing(8)
+        
+        # === ЛЕВАЯ КОЛОНКА: Панель ввода данных для НМЦК ===
+        manual_input_group = QGroupBox("Ввод данных для расчета НМЦК")
+        manual_input_layout = QGridLayout()
+        manual_input_layout.setSpacing(6)
+        
+        # Поле 1: Цена за ед. измерения по 1 КП
+        manual_input_layout.addWidget(QLabel("Цена за ед. изм. по 1 КП (₽):"), 0, 0)
+        self.manual_nmcc_price1_input = QLineEdit()
+        self.manual_nmcc_price1_input.setPlaceholderText("0.00")
+        self.manual_nmcc_price1_input.setObjectName("nmcc_input")
+        self.manual_nmcc_price1_input.textChanged.connect(self.update_manual_nmcc_summary)
+        manual_input_layout.addWidget(self.manual_nmcc_price1_input, 0, 1)
+        
+        # Поле 2: Цена за ед. измерения по 2 КП
+        manual_input_layout.addWidget(QLabel("Цена за ед. изм. по 2 КП (₽):"), 1, 0)
+        self.manual_nmcc_price2_input = QLineEdit()
+        self.manual_nmcc_price2_input.setPlaceholderText("0.00")
+        self.manual_nmcc_price2_input.setObjectName("nmcc_input")
+        self.manual_nmcc_price2_input.textChanged.connect(self.update_manual_nmcc_summary)
+        manual_input_layout.addWidget(self.manual_nmcc_price2_input, 1, 1)
+        
+        # Поле 3: Цена за ед. измерения по 3 КП
+        manual_input_layout.addWidget(QLabel("Цена за ед. изм. по 3 КП (₽):"), 2, 0)
+        self.manual_nmcc_price3_input = QLineEdit()
+        self.manual_nmcc_price3_input.setPlaceholderText("0.00")
+        self.manual_nmcc_price3_input.setObjectName("nmcc_input")
+        self.manual_nmcc_price3_input.textChanged.connect(self.update_manual_nmcc_summary)
+        manual_input_layout.addWidget(self.manual_nmcc_price3_input, 2, 1)
+        
+        # Поле 4: Объем в ед. измерения
+        manual_input_layout.addWidget(QLabel("Объем в ед. измерения:"), 3, 0)
+        self.manual_nmcc_volume_input = QLineEdit()
+        self.manual_nmcc_volume_input.setPlaceholderText("0")
+        self.manual_nmcc_volume_input.setObjectName("nmcc_input")
+        self.manual_nmcc_volume_input.textChanged.connect(self.update_manual_nmcc_summary)
+        manual_input_layout.addWidget(self.manual_nmcc_volume_input, 3, 1)
+        
+        manual_input_group.setLayout(manual_input_layout)
+        
+        # === ПРАВАЯ КОЛОНКА: Итоговые данные ===
+        manual_summary_group = QGroupBox("Итоговые данные")
+        manual_summary_layout = QGridLayout()
+        manual_summary_layout.setSpacing(6)
+        
+        # Метки для отображения итоговых данных
+        manual_summary_layout.addWidget(QLabel("Средняя цена по КП (₽):"), 0, 0)
+        self.manual_nmcc_avg_kp_label = QLabel("0.00")
+        self.manual_nmcc_avg_kp_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+        manual_summary_layout.addWidget(self.manual_nmcc_avg_kp_label, 0, 1)
+        
+        manual_summary_layout.addWidget(QLabel("Средняя по ЕИС (₽):"), 1, 0)
+        self.manual_nmcc_avg_eis_label = QLabel("0.00")
+        self.manual_nmcc_avg_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+        manual_summary_layout.addWidget(self.manual_nmcc_avg_eis_label, 1, 1)
+        
+        manual_summary_layout.addWidget(QLabel("Дельта средних цен (₽ / %):"), 2, 0)
+        self.manual_nmcc_price_delta_label = QLabel("0.00 (0.00%)")
+        self.manual_nmcc_price_delta_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+        manual_summary_layout.addWidget(self.manual_nmcc_price_delta_label, 2, 1)
+        
+        manual_summary_layout.addWidget(QLabel("Макс. отклонение по объему (ед. / %):"), 3, 0)
+        self.manual_nmcc_max_deviation_label = QLabel("0.00 (0.00%)")
+        self.manual_nmcc_max_deviation_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+        manual_summary_layout.addWidget(self.manual_nmcc_max_deviation_label, 3, 1)
+        
+        manual_summary_group.setLayout(manual_summary_layout)
+        
+        # Добавляем обе колонки в верхнюю панель
+        manual_top_panel.addWidget(manual_input_group, 1)
+        manual_top_panel.addWidget(manual_summary_group, 1)
+        
+        manual_nmcc_tab_layout.addLayout(manual_top_panel)
+        
+        # Таблица для ручного подбора НМЦК
         manual_nmcc_table_group = QGroupBox("Позиции для НМЦК (ручной подбор)")
         manual_nmcc_table_layout = QVBoxLayout()
         manual_nmcc_table_layout.setSpacing(0)
@@ -1244,7 +1321,7 @@ class UnifiedParserApp(QMainWindow):
         self.manual_nmcc_table.horizontalHeader().setStretchLastSection(True)
         self.manual_nmcc_table.verticalHeader().setVisible(False)
         self.manual_nmcc_table.setAlternatingRowColors(True)
-        self.manual_nmcc_table.setMinimumHeight(450)
+        self.manual_nmcc_table.setMinimumHeight(300)
         self.manual_nmcc_table.cellDoubleClicked.connect(self.open_manual_nmcc_table_link)
         
         # Устанавливаем начальные ширины колонок
@@ -1834,14 +1911,40 @@ class UnifiedParserApp(QMainWindow):
                 details_table.setItem(row_num, 0, param_item)
                 
                 # Значение
-                value_item = QTableWidgetItem(str(value))
-                value_item.setFlags(value_item.flags() & ~Qt.ItemIsEditable)
+                # Для contract_link создаем кликабельную ссылку
+                if field_name == 'contract_link' and value:
+                    value_item = QTableWidgetItem(value)
+                    value_item.setFlags(value_item.flags() & ~Qt.ItemIsEditable)
+                    # Делаем текст синим и подчеркнутым как hyperlink
+                    font = value_item.font()
+                    font.setUnderline(True)
+                    font.setBold(True)
+                    value_item.setFont(font)
+                    value_item.setForeground(Qt.blue)
+                    # Сохраняем URL в data role для открытия
+                    value_item.setData(Qt.UserRole, value)
+                    # Устанавливаем курсор-руку при наведении
+                    value_item.setFlags(value_item.flags() | Qt.ItemIsUserCheckable)
+                else:
+                    value_item = QTableWidgetItem(str(value))
+                    value_item.setFlags(value_item.flags() & ~Qt.ItemIsEditable)
                 details_table.setItem(row_num, 1, value_item)
                 
                 row_num += 1
         
         # Устанавливаем ширину первой колонки
         details_table.setColumnWidth(0, 250)
+        
+        # Обработка двойного клика по ссылке в модальном окне
+        def on_details_table_double_click(row, column):
+            if column == 1:  # Колонка "Значение"
+                item = details_table.item(row, column)
+                if item:
+                    url = item.data(Qt.UserRole)
+                    if url:
+                        QDesktopServices.openUrl(QUrl(url))
+        
+        details_table.cellDoubleClicked.connect(on_details_table_double_click)
         
         layout.addWidget(details_table)
         
@@ -1957,6 +2060,12 @@ class UnifiedParserApp(QMainWindow):
             # Заполняем таблицу НМЦК отобранными строками
             self.fill_nmcc_table(top_3_rows)
             
+            # Окрашиваем периметр кнопки в зеленый цвет
+            self.nmcc_volume_btn.setStyleSheet("border: 3px solid green;")
+            # Сбрасываем стиль у других кнопок
+            self.nmcc_avg_btn.setStyleSheet("")
+            self.nmcc_optimal_btn.setStyleSheet("")
+            
             # Переключаемся на вкладку НМЦК
             self.tables_tab_widget.setCurrentIndex(1)
             
@@ -2015,6 +2124,12 @@ class UnifiedParserApp(QMainWindow):
             
             # Заполняем таблицу НМЦК
             self.fill_nmcc_table(top_3_rows)
+            
+            # Окрашиваем периметр кнопки в зеленый цвет
+            self.nmcc_avg_btn.setStyleSheet("border: 3px solid green;")
+            # Сбрасываем стиль у других кнопок
+            self.nmcc_volume_btn.setStyleSheet("")
+            self.nmcc_optimal_btn.setStyleSheet("")
             
             # Переключаемся на вкладку НМЦК
             self.tables_tab_widget.setCurrentIndex(1)
@@ -2128,6 +2243,12 @@ class UnifiedParserApp(QMainWindow):
             # Заполняем таблицу НМЦК
             self.fill_nmcc_table(top_3_rows)
             
+            # Окрашиваем периметр кнопки в зеленый цвет
+            self.nmcc_optimal_btn.setStyleSheet("border: 3px solid green;")
+            # Сбрасываем стиль у других кнопок
+            self.nmcc_volume_btn.setStyleSheet("")
+            self.nmcc_avg_btn.setStyleSheet("")
+            
             # Переключаемся на вкладку НМЦК
             self.tables_tab_widget.setCurrentIndex(1)
             
@@ -2179,7 +2300,7 @@ class UnifiedParserApp(QMainWindow):
         self.update_nmcc_summary()
     
     def update_nmcc_summary(self):
-        """Расчет и обновление итоговых данных в блоке 'Итоговые данные'"""
+        """Расчет и обновление итоговых данных в блоке 'Итоговые данные' (вкладка НМЦК)"""
         try:
             # 1. Средняя цена по КП: (цена КП1 + цена КП2 + цена КП3) / 3
             prices = []
@@ -2269,6 +2390,97 @@ class UnifiedParserApp(QMainWindow):
             self.nmcc_avg_eis_label.setText("0.00")
             self.nmcc_price_delta_label.setText("0.00 (0.00%)")
             self.nmcc_max_deviation_label.setText("0.00 (0.00%)")
+
+    def update_manual_nmcc_summary(self):
+        """Расчет и обновление итоговых данных в блоке 'Итоговые данные' (вкладка НМЦК ручной подбор)"""
+        try:
+            # 1. Средняя цена по КП: (цена КП1 + цена КП2 + цена КП3) / 3
+            prices = []
+            for input_field in [self.manual_nmcc_price1_input, self.manual_nmcc_price2_input, self.manual_nmcc_price3_input]:
+                price_str = input_field.text().strip()
+                if price_str:
+                    try:
+                        prices.append(float(price_str.replace(',', '.')))
+                    except ValueError:
+                        continue
+            
+            if len(prices) > 0:
+                avg_kp = sum(prices) / len(prices)
+                self.manual_nmcc_avg_kp_label.setText(f"{avg_kp:.2f}")
+            else:
+                self.manual_nmcc_avg_kp_label.setText("0.00")
+            
+            # 2. Средняя по ЕИС: сумма цен из таблицы "Позиции для НМЦК (ручной подбор)" / 3
+            price_col_index = FIELD_ORDER.index('price_per_unit')
+            eis_prices = []
+            for row in range(self.manual_nmcc_table.rowCount()):
+                item = self.manual_nmcc_table.item(row, price_col_index)
+                if item and item.text():
+                    try:
+                        price = float(item.text().replace(',', '.'))
+                        eis_prices.append(price)
+                    except ValueError:
+                        continue
+            
+            if len(eis_prices) > 0:
+                avg_eis = sum(eis_prices) / len(eis_prices)
+                self.manual_nmcc_avg_eis_label.setText(f"{avg_eis:.2f}")
+            else:
+                self.manual_nmcc_avg_eis_label.setText("0.00")
+            
+            # 3. Дельта средних цен: абсолютное и относительное отклонение
+            if len(prices) > 0 and len(eis_prices) > 0:
+                price_delta_abs = avg_eis - avg_kp
+                if avg_kp != 0:
+                    price_delta_percent = (price_delta_abs / avg_kp) * 100
+                else:
+                    price_delta_percent = 0.0
+                self.manual_nmcc_price_delta_label.setText(f"{price_delta_abs:.2f} ({price_delta_percent:.2f}%)")
+            else:
+                self.manual_nmcc_price_delta_label.setText("0.00 (0.00%)")
+            
+            # 4. Максимальное отклонение по объему: абсолютное и относительное
+            volume_str = self.manual_nmcc_volume_input.text().strip()
+            max_deviation_abs = 0.0
+            max_deviation_percent = 0.0
+            
+            if volume_str:
+                try:
+                    target_volume = float(volume_str.replace(',', '.'))
+                    
+                    qty_col_index = FIELD_ORDER.index('qty_consumption_unit')
+                    
+                    for row in range(self.manual_nmcc_table.rowCount()):
+                        item = self.manual_nmcc_table.item(row, qty_col_index)
+                        if item and item.text():
+                            try:
+                                qty_text = item.text().strip().replace(',', '.').replace(' ', '')
+                                qty = float(qty_text)
+                                
+                                # Дельта = |объем - количество|
+                                delta = abs(target_volume - qty)
+                                
+                                # Процент отклонения = (дельта / объем) * 100
+                                if target_volume != 0:
+                                    deviation_percent = (delta / target_volume) * 100
+                                    if deviation_percent > max_deviation_percent:
+                                        max_deviation_percent = deviation_percent
+                                        max_deviation_abs = delta
+                            except ValueError:
+                                continue
+                    
+                    self.manual_nmcc_max_deviation_label.setText(f"{max_deviation_abs:.2f} ({max_deviation_percent:.2f}%)")
+                except ValueError:
+                    self.manual_nmcc_max_deviation_label.setText("0.00 (0.00%)")
+            else:
+                self.manual_nmcc_max_deviation_label.setText("0.00 (0.00%)")
+                
+        except Exception as e:
+            logging.error(f"Ошибка update_manual_nmcc_summary: {e}", exc_info=True)
+            self.manual_nmcc_avg_kp_label.setText("0.00")
+            self.manual_nmcc_avg_eis_label.setText("0.00")
+            self.manual_nmcc_price_delta_label.setText("0.00 (0.00%)")
+            self.manual_nmcc_max_deviation_label.setText("0.00 (0.00%)")
 
     def open_csv(self):
         """Открытие CSV файла"""
