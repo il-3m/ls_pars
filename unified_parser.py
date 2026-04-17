@@ -1142,6 +1142,10 @@ class UnifiedParserApp(QMainWindow):
         self.nmcc_avg_btn.setToolTip("Найти 3 позиции со средней ценой, наиболее близкой к средней по введенным КП")
         buttons_layout.addWidget(self.nmcc_avg_btn)
         
+        self.nmcc_optimal_btn = QPushButton("Оптимальный НМЦК")
+        self.nmcc_optimal_btn.setToolTip("Сбалансированный выбор 3 позиций по цене и объему, наиболее близким к указанным свойствам")
+        buttons_layout.addWidget(self.nmcc_optimal_btn)
+        
         buttons_layout.addStretch()
         nmcc_tab_layout.addLayout(buttons_layout)
         
@@ -1690,8 +1694,9 @@ class UnifiedParserApp(QMainWindow):
             
             target_volume = float(volume_str.replace(',', '.'))
             
-            # Находим индекс колонки qty_consumption_unit
-            qty_col_index = FIELD_ORDER.index('qty_consumption_unit')
+            # Находим индекс колонки qty_consumer_units (количество потребительских единиц)
+            # Это поле содержит фактический объем поставки в единицах товара
+            qty_col_index = FIELD_ORDER.index('qty_consumer_units')
             
             # Собираем все видимые строки из итоговой таблицы
             rows_with_qty = []
