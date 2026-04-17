@@ -636,6 +636,18 @@ class UnifiedParserWorker(QThread):
                 context: BrowserContext = await browser.new_context(locale="ru-RU")
                 
                 for idx, link_tuple in enumerate(links, start=1):
+                    # Проверка: достигнут ли лимит контрактов перед обработкой следующей ссылки
+                    if self.results_table is not None:
+                        unique_contract_numbers = set()
+                        for row in range(self.results_table.rowCount()):
+                            if not self.results_table.isRowHidden(row):
+                                item = self.results_table.item(row, FIELD_ORDER.index('reestr_number'))
+                                if item and item.text():
+                                    unique_contract_numbers.add(item.text())
+                        if len(unique_contract_numbers) >= self.max_contracts:
+                            self.update_output.emit(f"Достигнуто целевое количество контрактов ({self.max_contracts}), остановка парсинга")
+                            break
+                    
                     # Поддержка обоих форматов: кортеж (payment_url, common_info_url) или просто строка
                     if isinstance(link_tuple, tuple):
                         payment_url, common_info_url = link_tuple
