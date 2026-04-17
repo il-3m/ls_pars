@@ -1151,7 +1151,15 @@ class UnifiedParserApp(QMainWindow):
         nmcc_tab_layout.setSpacing(8)
         nmcc_tab_layout.setContentsMargins(8, 8, 8, 8)
         
-        # Панель ввода данных для НМЦК
+        # Горизонтальный layout для разделения на левую (ввод) и правую (информация) панели
+        nmcc_main_layout = QHBoxLayout()
+        nmcc_main_layout.setSpacing(16)
+        
+        # === ЛЕВАЯ ПАНЕЛЬ: Ввод данных ===
+        left_panel = QVBoxLayout()
+        left_panel.setSpacing(8)
+        
+        # Панель ввода данных для НМЦК (уменьшенная ширина)
         input_group = QGroupBox("Ввод данных для расчета НМЦК")
         input_layout = QGridLayout()
         input_layout.setSpacing(6)
@@ -1185,7 +1193,7 @@ class UnifiedParserApp(QMainWindow):
         input_layout.addWidget(self.nmcc_volume_input, 3, 1)
         
         input_group.setLayout(input_layout)
-        nmcc_tab_layout.addWidget(input_group)
+        left_panel.addWidget(input_group)
         
         # Кнопки расчета НМЦК
         buttons_layout = QHBoxLayout()
@@ -1204,7 +1212,51 @@ class UnifiedParserApp(QMainWindow):
         buttons_layout.addWidget(self.nmcc_optimal_btn)
         
         buttons_layout.addStretch()
-        nmcc_tab_layout.addLayout(buttons_layout)
+        left_panel.addLayout(buttons_layout)
+        left_panel.addStretch()
+        
+        # Добавляем левую панель в основной layout
+        nmcc_main_layout.addLayout(left_panel, 1)  # stretch=1 для меньшей ширины
+        
+        # === ПРАВАЯ ПАНЕЛЬ: Информация о расчетах ===
+        right_panel = QVBoxLayout()
+        right_panel.setSpacing(8)
+        
+        # Панель информации о расчетах
+        info_group = QGroupBox("Информация о расчетах")
+        info_layout = QFormLayout()
+        info_layout.setSpacing(8)
+        info_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        
+        # Средняя цена по КП
+        self.nmcc_avg_kp_label = QLabel("—")
+        self.nmcc_avg_kp_label.setStyleSheet("font-weight: bold; color: #2196F3;")
+        info_layout.addRow("Средняя цена по КП:", self.nmcc_avg_kp_label)
+        
+        # Средняя цена из таблицы (НМЦК)
+        self.nmcc_avg_table_label = QLabel("—")
+        self.nmcc_avg_table_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
+        info_layout.addRow("Средняя цена из таблицы (НМЦК):", self.nmcc_avg_table_label)
+        
+        # Максимальная дельта объема (абсолютная)
+        self.nmcc_max_delta_abs_label = QLabel("—")
+        self.nmcc_max_delta_abs_label.setStyleSheet("font-weight: bold; color: #FF9800;")
+        info_layout.addRow("Макс. дельта объема (абс.):", self.nmcc_max_delta_abs_label)
+        
+        # Максимальная дельта объема (%)
+        self.nmcc_max_delta_pct_label = QLabel("—")
+        self.nmcc_max_delta_pct_label.setStyleSheet("font-weight: bold; color: #FF5722;")
+        info_layout.addRow("Макс. дельта объема (%):", self.nmcc_max_delta_pct_label)
+        
+        info_group.setLayout(info_layout)
+        right_panel.addWidget(info_group)
+        right_panel.addStretch()
+        
+        # Добавляем правую панель в основной layout
+        nmcc_main_layout.addLayout(right_panel, 2)  # stretch=2 для большей ширины
+        
+        # Добавляем основной layout во вкладку
+        nmcc_tab_layout.addLayout(nmcc_main_layout)
         
         # Таблица НМЦК
         nmcc_table_group = QGroupBox("Результат расчета НМЦК (3 позиции)")
@@ -1772,13 +1824,14 @@ class UnifiedParserApp(QMainWindow):
                 return
             
             # Сортируем по дельте (разнице) между объемом в таблице и целевым объемом
+            # Берем 3 НАИБЛИЖАЙШИХ значения к целевому объему
             rows_with_qty.sort(key=lambda x: abs(x[1] - target_volume))
             
             # Берем 3 наиболее близких
             top_3_rows = rows_with_qty[:3]
             
             # Заполняем таблицу НМЦК
-            self.fill_nmcc_table(top_3_rows)
+            self.fill_nmcc_table(top_3_rows, target_volume=target_volume)
             
             # Переключаемся на вкладку НМЦК
             self.tables_tab_widget.setCurrentIndex(1)
@@ -1910,7 +1963,7 @@ class UnifiedParserApp(QMainWindow):
             top_3_rows = [(r[0], r[1]) for r in scored_rows[:3]]  # (row_idx, score)
             
             # Заполняем таблицу НМЦК
-            self.fill_nmcc_table(top_3_rows)
+            self.fill_nmcc_table(top_3_rows, target_volume=target_volume)
             
             # Переключаемся на вкладку НМЦК
             self.tables_tab_widget.setCurrentIndex(1)
@@ -1973,7 +2026,7 @@ class UnifiedParserApp(QMainWindow):
             top_3_rows = rows_with_price[:3]
             
             # Заполняем таблицу НМЦК
-            self.fill_nmcc_table(top_3_rows)
+            self.fill_nmcc_table(top_3_rows, target_volume=None)
             
             # Переключаемся на вкладку НМЦК
             self.tables_tab_widget.setCurrentIndex(1)
@@ -1984,14 +2037,19 @@ class UnifiedParserApp(QMainWindow):
             QMessageBox.critical(self, "Ошибка", f"Ошибка при расчете НМЦК по средней цене: {e}")
             logging.error(f"Ошибка calculate_nmcc_by_avg_price: {e}", exc_info=True)
     
-    def fill_nmcc_table(self, row_indices):
+    def fill_nmcc_table(self, row_indices, target_volume=None):
         """Заполнение таблицы НМЦК данными из указанных строк итоговой таблицы
         
         Args:
             row_indices: список кортежей (row_index, value) где value - значение по которому сортировали
+            target_volume: целевой объем для расчета дельты (опционально)
         """
         # Очищаем таблицу НМЦК
         self.nmcc_table.setRowCount(0)
+        
+        # Собираем данные для статистики
+        prices_from_table = []
+        volumes_from_table = []
         
         for row_idx, _ in row_indices:
             new_row = self.nmcc_table.rowCount()
@@ -2017,6 +2075,71 @@ class UnifiedParserApp(QMainWindow):
                         item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                     
                     self.nmcc_table.setItem(new_row, col_idx, item)
+            
+            # Собираем цену и объем для статистики
+            price_col_index = FIELD_ORDER.index('price_per_unit')
+            qty_col_index = FIELD_ORDER.index('qty_consumer_units')
+            
+            price_item = self.results_table.item(row_idx, price_col_index)
+            if price_item and price_item.text():
+                try:
+                    price = float(price_item.text().replace(',', '.'))
+                    prices_from_table.append(price)
+                except ValueError:
+                    pass
+            
+            qty_item = self.results_table.item(row_idx, qty_col_index)
+            if qty_item and qty_item.text():
+                qty = parse_volume_string(qty_item.text())
+                if qty is not None:
+                    volumes_from_table.append(qty)
+        
+        # Обновляем информацию о расчетах
+        self.update_nmcc_info(prices_from_table, volumes_from_table, target_volume)
+    
+    def update_nmcc_info(self, prices_from_table, volumes_from_table, target_volume=None):
+        """Обновление информационной панели с расчетами
+        
+        Args:
+            prices_from_table: список цен из выбранных позиций таблицы
+            volumes_from_table: список объемов из выбранных позиций таблицы
+            target_volume: целевой объем (опционально)
+        """
+        # Средняя цена по КП
+        prices = []
+        for input_field in [self.nmcc_price1_input, self.nmcc_price2_input, self.nmcc_price3_input]:
+            price_str = input_field.text().strip()
+            if price_str:
+                try:
+                    prices.append(float(price_str.replace(',', '.')))
+                except ValueError:
+                    pass
+        
+        if len(prices) > 0:
+            avg_kp = sum(prices) / len(prices)
+            self.nmcc_avg_kp_label.setText(f"{avg_kp:.2f} ₽")
+        else:
+            self.nmcc_avg_kp_label.setText("—")
+        
+        # Средняя цена из таблицы (НМЦК)
+        if len(prices_from_table) > 0:
+            avg_table = sum(prices_from_table) / len(prices_from_table)
+            self.nmcc_avg_table_label.setText(f"{avg_table:.2f} ₽")
+        else:
+            self.nmcc_avg_table_label.setText("—")
+        
+        # Максимальная дельта объема
+        if target_volume is not None and len(volumes_from_table) > 0:
+            # Находим максимальную абсолютную дельту
+            max_delta_abs = max(abs(v - target_volume) for v in volumes_from_table)
+            self.nmcc_max_delta_abs_label.setText(f"{max_delta_abs:.0f}")
+            
+            # Находим максимальную дельту в процентах
+            max_delta_pct = max(abs(v - target_volume) / target_volume * 100 for v in volumes_from_table)
+            self.nmcc_max_delta_pct_label.setText(f"{max_delta_pct:.1f}%")
+        else:
+            self.nmcc_max_delta_abs_label.setText("—")
+            self.nmcc_max_delta_pct_label.setText("—")
 
     def open_csv(self):
         """Открытие CSV файла"""
