@@ -2010,6 +2010,9 @@ class UnifiedParserApp(QMainWindow):
         row_position = self.manual_nmcc_table.rowCount()
         self.manual_nmcc_table.insertRow(row_position)
         
+        # Сохраняем номер реестровой записи для подсветки дубликатов
+        reestr_number = row_data.get('reestr_number', '')
+        
         for col_idx, field_name in enumerate(FIELD_ORDER):
             value = row_data.get(field_name, "")
             
@@ -2033,6 +2036,13 @@ class UnifiedParserApp(QMainWindow):
         tab_index = self.tables_tab_widget.indexOf(self.manual_nmcc_tab)
         if tab_index >= 0:
             self.tables_tab_widget.setCurrentIndex(tab_index)
+        
+        # Обновляем итоговые данные после добавления позиции
+        self.update_manual_nmcc_summary()
+        
+        # Обновляем подсветку дубликатов
+        if reestr_number:
+            self.highlight_duplicates_in_final_table({reestr_number}, 'manual_nmcc')
         
         self.append_log(f"Позиция добавлена в НМЦК ручной подбор: {row_data.get('name', 'Без названия')}")
     
@@ -2303,6 +2313,9 @@ class UnifiedParserApp(QMainWindow):
         # Очищаем таблицу НМЦК
         self.nmcc_table.setRowCount(0)
         
+        # Собираем номера реестровых записей для подсветки дубликатов
+        reestr_numbers_in_nmcc = set()
+        
         for row_idx, _ in row_indices:
             new_row = self.nmcc_table.rowCount()
             self.nmcc_table.insertRow(new_row)
@@ -2311,6 +2324,10 @@ class UnifiedParserApp(QMainWindow):
                 source_item = self.results_table.item(row_idx, col_idx)
                 if source_item:
                     value = source_item.text()
+                    
+                    # Сохраняем номер реестровой записи для проверки дубликатов
+                    if field_name == 'reestr_number' and value:
+                        reestr_numbers_in_nmcc.add(value)
                     
                     # Для колонки contract_link создаем кликабельную ссылку
                     if field_name == 'contract_link' and value:
@@ -2327,6 +2344,9 @@ class UnifiedParserApp(QMainWindow):
                         item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                     
                     self.nmcc_table.setItem(new_row, col_idx, item)
+        
+        # Обновляем подсветку дубликатов в итоговой таблице
+        self.highlight_duplicates_in_final_table(reestr_numbers_in_nmcc, 'nmcc')
         
         # Обновляем итоговые данные после заполнения таблицы
         self.update_nmcc_summary()
