@@ -733,6 +733,10 @@ class UnifiedParserApp(QMainWindow):
                 background-color: #FFFDE7;
                 color: #000000;
             }
+            QLineEdit#nmcc_input {
+                background-color: #E3F2FD;
+                color: #000000;
+            }
             QLineEdit:focus, QDateEdit:focus, QComboBox:focus {
                 border: 1px solid #000000;
             }
@@ -1056,6 +1060,15 @@ class UnifiedParserApp(QMainWindow):
         right_layout.setSpacing(0)
         right_layout.setContentsMargins(0, 0, 0, 0)
 
+        # Вкладки для таблиц: "Итоговая" и "НМЦК"
+        self.tables_tab_widget = QTabWidget()
+        
+        # === ВКЛАДКА 1: ИТОГОВАЯ ТАБЛИЦА ===
+        final_tab = QWidget()
+        final_tab_layout = QVBoxLayout()
+        final_tab_layout.setSpacing(0)
+        final_tab_layout.setContentsMargins(0, 0, 0, 0)
+        
         # Таблица результатов - занимает всё доступное место
         self.results_table = QTableWidget()
         self.results_table.setColumnCount(len(FIELD_ORDER))
@@ -1072,7 +1085,101 @@ class UnifiedParserApp(QMainWindow):
         for i in range(len(FIELD_ORDER)):
             self.results_table.setColumnWidth(i, 150)
         
-        right_layout.addWidget(self.results_table)
+        final_tab_layout.addWidget(self.results_table)
+        final_tab.setLayout(final_tab_layout)
+        
+        # === ВКЛАДКА 2: НМЦК ===
+        nmcc_tab = QWidget()
+        nmcc_tab_layout = QVBoxLayout()
+        nmcc_tab_layout.setSpacing(8)
+        nmcc_tab_layout.setContentsMargins(8, 8, 8, 8)
+        
+        # Панель ввода данных для НМЦК
+        input_group = QGroupBox("Ввод данных для расчета НМЦК")
+        input_layout = QGridLayout()
+        input_layout.setSpacing(6)
+        
+        # Поле 1: Цена за ед. измерения по 1 КП
+        input_layout.addWidget(QLabel("Цена за ед. изм. по 1 КП (₽):"), 0, 0)
+        self.nmcc_price1_input = QLineEdit()
+        self.nmcc_price1_input.setPlaceholderText("0.00")
+        self.nmcc_price1_input.setObjectName("nmcc_input")
+        input_layout.addWidget(self.nmcc_price1_input, 0, 1)
+        
+        # Поле 2: Цена за ед. измерения по 2 КП
+        input_layout.addWidget(QLabel("Цена за ед. изм. по 2 КП (₽):"), 1, 0)
+        self.nmcc_price2_input = QLineEdit()
+        self.nmcc_price2_input.setPlaceholderText("0.00")
+        self.nmcc_price2_input.setObjectName("nmcc_input")
+        input_layout.addWidget(self.nmcc_price2_input, 1, 1)
+        
+        # Поле 3: Цена за ед. измерения по 3 КП
+        input_layout.addWidget(QLabel("Цена за ед. изм. по 3 КП (₽):"), 2, 0)
+        self.nmcc_price3_input = QLineEdit()
+        self.nmcc_price3_input.setPlaceholderText("0.00")
+        self.nmcc_price3_input.setObjectName("nmcc_input")
+        input_layout.addWidget(self.nmcc_price3_input, 2, 1)
+        
+        # Поле 4: Объем в ед. измерения
+        input_layout.addWidget(QLabel("Объем в ед. измерения:"), 3, 0)
+        self.nmcc_volume_input = QLineEdit()
+        self.nmcc_volume_input.setPlaceholderText("0")
+        self.nmcc_volume_input.setObjectName("nmcc_input")
+        input_layout.addWidget(self.nmcc_volume_input, 3, 1)
+        
+        input_group.setLayout(input_layout)
+        nmcc_tab_layout.addWidget(input_group)
+        
+        # Кнопки расчета НМЦК
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(8)
+        
+        self.nmcc_volume_btn = QPushButton("НМЦК по объему")
+        self.nmcc_volume_btn.setToolTip("Найти 3 позиции с количеством, наиболее близким к указанному объему")
+        buttons_layout.addWidget(self.nmcc_volume_btn)
+        
+        self.nmcc_avg_btn = QPushButton("НМЦК приближенный к КП")
+        self.nmcc_avg_btn.setToolTip("Найти 3 позиции со средней ценой, наиболее близкой к средней по введенным КП")
+        buttons_layout.addWidget(self.nmcc_avg_btn)
+        
+        buttons_layout.addStretch()
+        nmcc_tab_layout.addLayout(buttons_layout)
+        
+        # Таблица НМЦК
+        nmcc_table_group = QGroupBox("Результат расчета НМЦК (3 позиции)")
+        nmcc_table_layout = QVBoxLayout()
+        nmcc_table_layout.setSpacing(0)
+        nmcc_table_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.nmcc_table = QTableWidget()
+        self.nmcc_table.setColumnCount(len(FIELD_ORDER))
+        self.nmcc_table.setHorizontalHeaderLabels([EXPORT_HEADERS_RU[FIELD_ORDER[i]] for i in range(len(FIELD_ORDER))])
+        self.nmcc_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.nmcc_table.horizontalHeader().setStretchLastSection(True)
+        self.nmcc_table.verticalHeader().setVisible(False)
+        self.nmcc_table.setAlternatingRowColors(True)
+        self.nmcc_table.setMinimumHeight(300)
+        self.nmcc_table.cellDoubleClicked.connect(self.open_nmcc_table_link)
+        
+        # Устанавливаем начальные ширины колонок
+        for i in range(len(FIELD_ORDER)):
+            self.nmcc_table.setColumnWidth(i, 150)
+        
+        nmcc_table_layout.addWidget(self.nmcc_table)
+        nmcc_table_group.setLayout(nmcc_table_layout)
+        nmcc_tab_layout.addWidget(nmcc_table_group)
+        
+        nmcc_tab.setLayout(nmcc_tab_layout)
+        
+        # Добавляем вкладки в виджет
+        self.tables_tab_widget.addTab(final_tab, "Итоговая")
+        self.tables_tab_widget.addTab(nmcc_tab, "НМЦК")
+        
+        # Подключаем кнопки расчета
+        self.nmcc_volume_btn.clicked.connect(self.calculate_nmcc_by_volume)
+        self.nmcc_avg_btn.clicked.connect(self.calculate_nmcc_by_avg_price)
+        
+        right_layout.addWidget(self.tables_tab_widget)
         right_panel.setLayout(right_layout)
 
         # Добавляем панели в главный layout
@@ -1249,6 +1356,8 @@ class UnifiedParserApp(QMainWindow):
         if reply == QMessageBox.Yes:
             # Очищаем таблицу
             self.results_table.setRowCount(0)
+            # Очищаем таблицу НМЦК
+            self.nmcc_table.setRowCount(0)
             # Очищаем список ссылок
             self.links_list.clear()
             # Очищаем лог
@@ -1263,6 +1372,11 @@ class UnifiedParserApp(QMainWindow):
             self.all_rows = []
             # Сбрасываем фильтр
             self.filter_before_search = ""
+            # Очищаем поля ввода НМЦК
+            self.nmcc_price1_input.clear()
+            self.nmcc_price2_input.clear()
+            self.nmcc_price3_input.clear()
+            self.nmcc_volume_input.clear()
             # НЕ очищаем поля фильтров и базу данных (reference_data остается загруженной)
             # Обновляем статус
             self.status_label.setText("Данные сброшены")
@@ -1551,6 +1665,158 @@ class UnifiedParserApp(QMainWindow):
             url = item.data(Qt.UserRole)
             if url:
                 QDesktopServices.openUrl(QUrl(url))
+    
+    def open_nmcc_table_link(self, row, column):
+        """Открытие ссылки из таблицы НМЦК при двойном клике на ячейку contract_link"""
+        # Проверяем, что кликнули на колонку contract_link
+        contract_link_col = FIELD_ORDER.index('contract_link')
+        if column != contract_link_col:
+            return
+        
+        item = self.nmcc_table.item(row, column)
+        if item:
+            url = item.data(Qt.UserRole)
+            if url:
+                QDesktopServices.openUrl(QUrl(url))
+    
+    def calculate_nmcc_by_volume(self):
+        """Расчет НМЦК по объему: найти 3 позиции с количеством, наиболее близким к указанному объему"""
+        try:
+            # Получаем объем из поля ввода
+            volume_str = self.nmcc_volume_input.text().strip()
+            if not volume_str:
+                QMessageBox.warning(self, "Внимание", "Введите объем в ед. измерения")
+                return
+            
+            target_volume = float(volume_str.replace(',', '.'))
+            
+            # Находим индекс колонки qty_consumption_unit
+            qty_col_index = FIELD_ORDER.index('qty_consumption_unit')
+            
+            # Собираем все видимые строки из итоговой таблицы
+            rows_with_qty = []
+            for row in range(self.results_table.rowCount()):
+                if not self.results_table.isRowHidden(row):
+                    item = self.results_table.item(row, qty_col_index)
+                    if item and item.text():
+                        try:
+                            qty = float(item.text().replace(',', '.'))
+                            rows_with_qty.append((row, qty))
+                        except ValueError:
+                            continue
+            
+            if len(rows_with_qty) < 3:
+                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено позиций: {len(rows_with_qty)}, требуется минимум 3")
+                return
+            
+            # Сортируем по дельте (разнице) между объемом в таблице и целевым объемом
+            rows_with_qty.sort(key=lambda x: abs(x[1] - target_volume))
+            
+            # Берем 3 наиболее близких
+            top_3_rows = rows_with_qty[:3]
+            
+            # Заполняем таблицу НМЦК
+            self.fill_nmcc_table(top_3_rows)
+            
+            # Переключаемся на вкладку НМЦК
+            self.tables_tab_widget.setCurrentIndex(1)
+            
+            self.append_log(f"НМЦК по объему: выбрано 3 позиции с объемом, близким к {target_volume}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при расчете НМЦК по объему: {e}")
+            logging.error(f"Ошибка calculate_nmcc_by_volume: {e}", exc_info=True)
+    
+    def calculate_nmcc_by_avg_price(self):
+        """Расчет НМЦК приближенный к КП: найти 3 позиции со средней ценой, наиболее близкой к средней по введенным КП"""
+        try:
+            # Получаем цены из полей ввода
+            prices = []
+            for input_field in [self.nmcc_price1_input, self.nmcc_price2_input, self.nmcc_price3_input]:
+                price_str = input_field.text().strip()
+                if price_str:
+                    try:
+                        prices.append(float(price_str.replace(',', '.')))
+                    except ValueError:
+                        continue
+            
+            if len(prices) == 0:
+                QMessageBox.warning(self, "Внимание", "Введите хотя бы одну цену за ед. измерения по КП")
+                return
+            
+            # Вычисляем среднюю арифметическую по введенным КП
+            avg_price_kp = sum(prices) / len(prices)
+            
+            # Находим индекс колонки price_per_unit
+            price_col_index = FIELD_ORDER.index('price_per_unit')
+            
+            # Собираем все видимые строки из итоговой таблицы
+            rows_with_price = []
+            for row in range(self.results_table.rowCount()):
+                if not self.results_table.isRowHidden(row):
+                    item = self.results_table.item(row, price_col_index)
+                    if item and item.text():
+                        try:
+                            price = float(item.text().replace(',', '.'))
+                            rows_with_price.append((row, price))
+                        except ValueError:
+                            continue
+            
+            if len(rows_with_price) < 3:
+                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено позиций: {len(rows_with_price)}, требуется минимум 3")
+                return
+            
+            # Сортируем по дельте (разнице) между ценой в таблице и средней ценой КП
+            rows_with_price.sort(key=lambda x: abs(x[1] - avg_price_kp))
+            
+            # Берем 3 наиболее близких
+            top_3_rows = rows_with_price[:3]
+            
+            # Заполняем таблицу НМЦК
+            self.fill_nmcc_table(top_3_rows)
+            
+            # Переключаемся на вкладку НМЦК
+            self.tables_tab_widget.setCurrentIndex(1)
+            
+            self.append_log(f"НМЦК по средней цене КП: средняя цена={avg_price_kp:.2f}₽, выбрано 3 позиции")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при расчете НМЦК по средней цене: {e}")
+            logging.error(f"Ошибка calculate_nmcc_by_avg_price: {e}", exc_info=True)
+    
+    def fill_nmcc_table(self, row_indices):
+        """Заполнение таблицы НМЦК данными из указанных строк итоговой таблицы
+        
+        Args:
+            row_indices: список кортежей (row_index, value) где value - значение по которому сортировали
+        """
+        # Очищаем таблицу НМЦК
+        self.nmcc_table.setRowCount(0)
+        
+        for row_idx, _ in row_indices:
+            new_row = self.nmcc_table.rowCount()
+            self.nmcc_table.insertRow(new_row)
+            
+            for col_idx, field_name in enumerate(FIELD_ORDER):
+                source_item = self.results_table.item(row_idx, col_idx)
+                if source_item:
+                    value = source_item.text()
+                    
+                    # Для колонки contract_link создаем кликабельную ссылку
+                    if field_name == 'contract_link' and value:
+                        item = QTableWidgetItem(value)
+                        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                        font = item.font()
+                        font.setUnderline(True)
+                        font.setBold(True)
+                        item.setFont(font)
+                        item.setForeground(Qt.blue)
+                        item.setData(Qt.UserRole, value)
+                    else:
+                        item = QTableWidgetItem(value)
+                        item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    
+                    self.nmcc_table.setItem(new_row, col_idx, item)
 
     def open_csv(self):
         """Открытие CSV файла"""
