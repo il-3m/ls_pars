@@ -1089,7 +1089,7 @@ class UnifiedParserApp(QMainWindow):
         final_tab.setLayout(final_tab_layout)
         
         # === ВКЛАДКА 2: НМЦК ===
-        nmcc_tab = QWidget()
+        self.nmcc_tab = QWidget()
         nmcc_tab_layout = QVBoxLayout()
         nmcc_tab_layout.setSpacing(8)
         nmcc_tab_layout.setContentsMargins(8, 8, 8, 8)
@@ -1219,11 +1219,11 @@ class UnifiedParserApp(QMainWindow):
         nmcc_table_group.setLayout(nmcc_table_layout)
         nmcc_tab_layout.addWidget(nmcc_table_group)
         
-        nmcc_tab.setLayout(nmcc_tab_layout)
+        self.nmcc_tab.setLayout(nmcc_tab_layout)
         
         # Добавляем вкладки в виджет
         self.tables_tab_widget.addTab(final_tab, "Итоговая")
-        self.tables_tab_widget.addTab(nmcc_tab, "НМЦК")
+        self.tables_tab_widget.addTab(self.nmcc_tab, "НМЦК")
         
         # === ВКЛАДКА 3: НМЦК ручной подбор ===
         self.manual_nmcc_tab = QWidget()
@@ -1255,7 +1255,7 @@ class UnifiedParserApp(QMainWindow):
         manual_nmcc_table_group.setLayout(manual_nmcc_table_layout)
         manual_nmcc_tab_layout.addWidget(manual_nmcc_table_group)
         
-        manual_nmcc_tab.setLayout(manual_nmcc_tab_layout)
+        self.manual_nmcc_tab.setLayout(manual_nmcc_tab_layout)
         self.tables_tab_widget.addTab(self.manual_nmcc_tab, "НМЦК ручной подбор")
         
         # Подключаем кнопки расчета
