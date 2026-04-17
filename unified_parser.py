@@ -1153,10 +1153,15 @@ class UnifiedParserApp(QMainWindow):
         self.nmcc_avg_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
         summary_layout.addWidget(self.nmcc_avg_eis_label, 1, 1)
         
-        summary_layout.addWidget(QLabel("Макс. отклонение по объему (%):"), 2, 0)
-        self.nmcc_max_deviation_label = QLabel("0.00")
+        summary_layout.addWidget(QLabel("Дельта средних цен (₽ / %):"), 2, 0)
+        self.nmcc_price_delta_label = QLabel("0.00 (0.00%)")
+        self.nmcc_price_delta_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+        summary_layout.addWidget(self.nmcc_price_delta_label, 2, 1)
+        
+        summary_layout.addWidget(QLabel("Макс. отклонение по объему (ед. / %):"), 3, 0)
+        self.nmcc_max_deviation_label = QLabel("0.00 (0.00%)")
         self.nmcc_max_deviation_label.setStyleSheet("font-weight: bold; color: #0066cc;")
-        summary_layout.addWidget(self.nmcc_max_deviation_label, 2, 1)
+        summary_layout.addWidget(self.nmcc_max_deviation_label, 3, 1)
         
         summary_group.setLayout(summary_layout)
         
@@ -1177,6 +1182,15 @@ class UnifiedParserApp(QMainWindow):
         self.nmcc_avg_btn = QPushButton("НМЦК приближенный к КП")
         self.nmcc_avg_btn.setToolTip("Найти 3 позиции со средней ценой, наиболее близкой к средней по введенным КП")
         buttons_layout.addWidget(self.nmcc_avg_btn)
+        
+        self.nmcc_optimal_btn = QPushButton("НМЦК Оптимальный")
+        self.nmcc_optimal_btn.setToolTip(
+            "Оптимальный алгоритм:\n"
+            "1. В приоритете 'вписаться в цену' (средняя цена ЕИС >= средней цены КП)\n"
+            "2. Минимизировать разброс по объему (не более 50% отклонения)\n"
+            "3. Баланс между ценой и объемом для наилучшего соответствия"
+        )
+        buttons_layout.addWidget(self.nmcc_optimal_btn)
         
         buttons_layout.addStretch()
         nmcc_tab_layout.addLayout(buttons_layout)
@@ -1214,6 +1228,7 @@ class UnifiedParserApp(QMainWindow):
         # Подключаем кнопки расчета
         self.nmcc_volume_btn.clicked.connect(self.calculate_nmcc_by_volume)
         self.nmcc_avg_btn.clicked.connect(self.calculate_nmcc_by_avg_price)
+        self.nmcc_optimal_btn.clicked.connect(self.calculate_nmcc_optimal)
         
         right_layout.addWidget(self.tables_tab_widget)
         right_panel.setLayout(right_layout)
@@ -1416,7 +1431,8 @@ class UnifiedParserApp(QMainWindow):
             # Сбрасываем итоговые данные
             self.nmcc_avg_kp_label.setText("0.00")
             self.nmcc_avg_eis_label.setText("0.00")
-            self.nmcc_max_deviation_label.setText("0.00")
+            self.nmcc_price_delta_label.setText("0.00 (0.00%)")
+            self.nmcc_max_deviation_label.setText("0.00 (0.00%)")
             # НЕ очищаем поля фильтров и базу данных (reference_data остается загруженной)
             # Обновляем статус
             self.status_label.setText("Данные сброшены")
@@ -1843,6 +1859,122 @@ class UnifiedParserApp(QMainWindow):
             QMessageBox.critical(self, "Ошибка", f"Ошибка при расчете НМЦК по средней цене: {e}")
             logging.error(f"Ошибка calculate_nmcc_by_avg_price: {e}", exc_info=True)
     
+    def calculate_nmcc_optimal(self):
+        """Оптимальный алгоритм расчета НМЦК:
+        
+        Логика:
+        1. В приоритете 'вписаться в цену' - средняя цена ЕИС должна быть >= средней цены КП
+        2. Не допускать значительного разброса по объему (макс. отклонение <= 50%)
+        3. Использовать комбинированный скоринг для баланса между ценой и объемом
+        
+        Алгоритм:
+        - Для каждой позиции вычисляем скоринг на основе:
+          * Ценовой фактор: насколько цена близка к целевой (с бонусом за EIS >= KP)
+          * Объемный фактор: насколько объем близок к целевому (с штрафом за >50% отклонение)
+        - Отбираем 3 позиции с наилучшим综合ным скорингом
+        """
+        try:
+            # Получаем целевые значения
+            volume_str = self.nmcc_volume_input.text().strip()
+            if not volume_str:
+                QMessageBox.warning(self, "Внимание", "Введите объем в ед. измерения для оптимального расчета")
+                return
+            
+            target_volume = float(volume_str.replace(',', '.'))
+            
+            prices = []
+            for input_field in [self.nmcc_price1_input, self.nmcc_price2_input, self.nmcc_price3_input]:
+                price_str = input_field.text().strip()
+                if price_str:
+                    try:
+                        prices.append(float(price_str.replace(',', '.')))
+                    except ValueError:
+                        continue
+            
+            if len(prices) == 0:
+                QMessageBox.warning(self, "Внимание", "Введите хотя бы одну цену за ед. измерения по КП")
+                return
+            
+            avg_price_kp = sum(prices) / len(prices)
+            
+            # Находим индексы колонок
+            price_col_index = FIELD_ORDER.index('price_per_unit')
+            qty_col_index = FIELD_ORDER.index('qty_consumption_unit')
+            
+            # Собираем все видимые строки с данными о цене и объеме
+            rows_with_data = []
+            for row in range(self.results_table.rowCount()):
+                if not self.results_table.isRowHidden(row):
+                    price_item = self.results_table.item(row, price_col_index)
+                    qty_item = self.results_table.item(row, qty_col_index)
+                    
+                    if price_item and price_item.text() and qty_item and qty_item.text():
+                        try:
+                            price = float(price_item.text().replace(',', '.'))
+                            qty_text = qty_item.text().strip().replace(',', '.').replace(' ', '')
+                            qty = float(qty_text)
+                            rows_with_data.append((row, price, qty))
+                        except ValueError:
+                            continue
+            
+            if len(rows_with_data) < 3:
+                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено позиций: {len(rows_with_data)}, требуется минимум 3")
+                return
+            
+            # Вычисляем скоринг для каждой позиции
+            scored_rows = []
+            for row_idx, price, qty in rows_with_data:
+                # 1. Ценовой скоринг (0-100 баллов)
+                # Базовый скоринг: обратная пропорциональность дельте цены
+                price_delta = abs(price - avg_price_kp)
+                price_diff_score = max(0, 100 - (price_delta / max(avg_price_kp, 0.01)) * 100)
+                
+                # Бонус за EIS >= KP (вписаться в цену)
+                if price >= avg_price_kp:
+                    price_bonus = 50  # Дополнительный бонус за выполнение приоритета
+                else:
+                    price_bonus = 0
+                
+                price_score = price_diff_score + price_bonus
+                
+                # 2. Объемный скоринг (0-100 баллов)
+                volume_delta = abs(qty - target_volume)
+                volume_diff_percent = (volume_delta / max(target_volume, 0.01)) * 100
+                
+                # Штраф за превышение 50% отклонения
+                if volume_diff_percent <= 50:
+                    volume_score = 100 - volume_diff_percent  # 50-100 баллов при отклонении 0-50%
+                else:
+                    volume_score = max(0, 100 - volume_diff_percent * 2)  # Агрессивный штраф за >50%
+                
+                # 3. Комбинированный скоринг
+                # Приоритет цены (60%) над объемом (40%) для выполнения требования "вписаться в цену"
+                combined_score = price_score * 0.6 + volume_score * 0.4
+                
+                scored_rows.append((row_idx, price, qty, combined_score, price_score, volume_score))
+            
+            # Сортируем по комбинированному скорингу (по убыванию)
+            scored_rows.sort(key=lambda x: x[3], reverse=True)
+            
+            # Берем 3 позиции с наилучшим скорингом
+            top_3_rows = [(r[0], r[1]) for r in scored_rows[:3]]  # (row_index, price) для fill_nmcc_table
+            
+            # Заполняем таблицу НМЦК
+            self.fill_nmcc_table(top_3_rows)
+            
+            # Переключаемся на вкладку НМЦК
+            self.tables_tab_widget.setCurrentIndex(1)
+            
+            # Формируем подробное сообщение о результатах
+            selected_info = [f"цена={r[1]:.2f}₽, объем={r[2]:.2f}, скор={r[3]:.1f}" 
+                          for r in scored_rows[:3]]
+            self.append_log(f"НМЦК Оптимальный: средняя цена КП={avg_price_kp:.2f}₽, целевой объем={target_volume}")
+            self.append_log(f"Выбрано 3 позиции: {'; '.join(selected_info)}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при оптимальном расчете НМЦК: {e}")
+            logging.error(f"Ошибка calculate_nmcc_optimal: {e}", exc_info=True)
+    
     def fill_nmcc_table(self, row_indices):
         """Заполнение таблицы НМЦК данными из указанных строк итоговой таблицы
         
@@ -1917,15 +2049,28 @@ class UnifiedParserApp(QMainWindow):
             else:
                 self.nmcc_avg_eis_label.setText("0.00")
             
-            # 3. Максимальное отклонение по объему: максимальная дельта между объемом в ед. измерения 
-            #    и кол-во в потребит. единице измерения / проценты (дельта/ объем в ед. измерения)
+            # 3. Дельта средних цен: абсолютное и относительное отклонение
+            # Дельта = средняя ЕИС - средняя КП (положительная = ЕИС выше, что хорошо для "вписаться в цену")
+            if len(prices) > 0 and len(eis_prices) > 0:
+                price_delta_abs = avg_eis - avg_kp
+                if avg_kp != 0:
+                    price_delta_percent = (price_delta_abs / avg_kp) * 100
+                else:
+                    price_delta_percent = 0.0
+                self.nmcc_price_delta_label.setText(f"{price_delta_abs:.2f} ({price_delta_percent:.2f}%)")
+            else:
+                self.nmcc_price_delta_label.setText("0.00 (0.00%)")
+            
+            # 4. Максимальное отклонение по объему: абсолютное и относительное
             volume_str = self.nmcc_volume_input.text().strip()
+            max_deviation_abs = 0.0
+            max_deviation_percent = 0.0
+            
             if volume_str:
                 try:
                     target_volume = float(volume_str.replace(',', '.'))
                     
                     qty_col_index = FIELD_ORDER.index('qty_consumption_unit')
-                    max_deviation_percent = 0.0
                     
                     for row in range(self.nmcc_table.rowCount()):
                         item = self.nmcc_table.item(row, qty_col_index)
@@ -1942,20 +2087,22 @@ class UnifiedParserApp(QMainWindow):
                                     deviation_percent = (delta / target_volume) * 100
                                     if deviation_percent > max_deviation_percent:
                                         max_deviation_percent = deviation_percent
+                                        max_deviation_abs = delta
                             except ValueError:
                                 continue
                     
-                    self.nmcc_max_deviation_label.setText(f"{max_deviation_percent:.2f}")
+                    self.nmcc_max_deviation_label.setText(f"{max_deviation_abs:.2f} ({max_deviation_percent:.2f}%)")
                 except ValueError:
-                    self.nmcc_max_deviation_label.setText("0.00")
+                    self.nmcc_max_deviation_label.setText("0.00 (0.00%)")
             else:
-                self.nmcc_max_deviation_label.setText("0.00")
+                self.nmcc_max_deviation_label.setText("0.00 (0.00%)")
                 
         except Exception as e:
             logging.error(f"Ошибка update_nmcc_summary: {e}", exc_info=True)
             self.nmcc_avg_kp_label.setText("0.00")
             self.nmcc_avg_eis_label.setText("0.00")
-            self.nmcc_max_deviation_label.setText("0.00")
+            self.nmcc_price_delta_label.setText("0.00 (0.00%)")
+            self.nmcc_max_deviation_label.setText("0.00 (0.00%)")
 
     def open_csv(self):
         """Открытие CSV файла"""
