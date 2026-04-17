@@ -1094,7 +1094,11 @@ class UnifiedParserApp(QMainWindow):
         nmcc_tab_layout.setSpacing(8)
         nmcc_tab_layout.setContentsMargins(8, 8, 8, 8)
         
-        # Панель ввода данных для НМЦК
+        # Верхняя панель с двумя колонками: ввод данных и итоговые данные
+        top_panel = QHBoxLayout()
+        top_panel.setSpacing(8)
+        
+        # === ЛЕВАЯ КОЛОНКА: Панель ввода данных для НМЦК ===
         input_group = QGroupBox("Ввод данных для расчета НМЦК")
         input_layout = QGridLayout()
         input_layout.setSpacing(6)
@@ -1104,6 +1108,7 @@ class UnifiedParserApp(QMainWindow):
         self.nmcc_price1_input = QLineEdit()
         self.nmcc_price1_input.setPlaceholderText("0.00")
         self.nmcc_price1_input.setObjectName("nmcc_input")
+        self.nmcc_price1_input.textChanged.connect(self.update_nmcc_summary)
         input_layout.addWidget(self.nmcc_price1_input, 0, 1)
         
         # Поле 2: Цена за ед. измерения по 2 КП
@@ -1111,6 +1116,7 @@ class UnifiedParserApp(QMainWindow):
         self.nmcc_price2_input = QLineEdit()
         self.nmcc_price2_input.setPlaceholderText("0.00")
         self.nmcc_price2_input.setObjectName("nmcc_input")
+        self.nmcc_price2_input.textChanged.connect(self.update_nmcc_summary)
         input_layout.addWidget(self.nmcc_price2_input, 1, 1)
         
         # Поле 3: Цена за ед. измерения по 3 КП
@@ -1118,6 +1124,7 @@ class UnifiedParserApp(QMainWindow):
         self.nmcc_price3_input = QLineEdit()
         self.nmcc_price3_input.setPlaceholderText("0.00")
         self.nmcc_price3_input.setObjectName("nmcc_input")
+        self.nmcc_price3_input.textChanged.connect(self.update_nmcc_summary)
         input_layout.addWidget(self.nmcc_price3_input, 2, 1)
         
         # Поле 4: Объем в ед. измерения
@@ -1125,10 +1132,39 @@ class UnifiedParserApp(QMainWindow):
         self.nmcc_volume_input = QLineEdit()
         self.nmcc_volume_input.setPlaceholderText("0")
         self.nmcc_volume_input.setObjectName("nmcc_input")
+        self.nmcc_volume_input.textChanged.connect(self.update_nmcc_summary)
         input_layout.addWidget(self.nmcc_volume_input, 3, 1)
         
         input_group.setLayout(input_layout)
-        nmcc_tab_layout.addWidget(input_group)
+        
+        # === ПРАВАЯ КОЛОНКА: Итоговые данные ===
+        summary_group = QGroupBox("Итоговые данные")
+        summary_layout = QGridLayout()
+        summary_layout.setSpacing(6)
+        
+        # Метки для отображения итоговых данных
+        summary_layout.addWidget(QLabel("Средняя цена по КП (₽):"), 0, 0)
+        self.nmcc_avg_kp_label = QLabel("0.00")
+        self.nmcc_avg_kp_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+        summary_layout.addWidget(self.nmcc_avg_kp_label, 0, 1)
+        
+        summary_layout.addWidget(QLabel("Средняя по ЕИС (₽):"), 1, 0)
+        self.nmcc_avg_eis_label = QLabel("0.00")
+        self.nmcc_avg_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+        summary_layout.addWidget(self.nmcc_avg_eis_label, 1, 1)
+        
+        summary_layout.addWidget(QLabel("Макс. отклонение по объему (%):"), 2, 0)
+        self.nmcc_max_deviation_label = QLabel("0.00")
+        self.nmcc_max_deviation_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+        summary_layout.addWidget(self.nmcc_max_deviation_label, 2, 1)
+        
+        summary_group.setLayout(summary_layout)
+        
+        # Добавляем обе колонки в верхнюю панель
+        top_panel.addWidget(input_group, 1)
+        top_panel.addWidget(summary_group, 1)
+        
+        nmcc_tab_layout.addLayout(top_panel)
         
         # Кнопки расчета НМЦК
         buttons_layout = QHBoxLayout()
@@ -1377,6 +1413,10 @@ class UnifiedParserApp(QMainWindow):
             self.nmcc_price2_input.clear()
             self.nmcc_price3_input.clear()
             self.nmcc_volume_input.clear()
+            # Сбрасываем итоговые данные
+            self.nmcc_avg_kp_label.setText("0.00")
+            self.nmcc_avg_eis_label.setText("0.00")
+            self.nmcc_max_deviation_label.setText("0.00")
             # НЕ очищаем поля фильтров и базу данных (reference_data остается загруженной)
             # Обновляем статус
             self.status_label.setText("Данные сброшены")
@@ -1836,6 +1876,86 @@ class UnifiedParserApp(QMainWindow):
                         item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                     
                     self.nmcc_table.setItem(new_row, col_idx, item)
+        
+        # Обновляем итоговые данные после заполнения таблицы
+        self.update_nmcc_summary()
+    
+    def update_nmcc_summary(self):
+        """Расчет и обновление итоговых данных в блоке 'Итоговые данные'"""
+        try:
+            # 1. Средняя цена по КП: (цена КП1 + цена КП2 + цена КП3) / 3
+            prices = []
+            for input_field in [self.nmcc_price1_input, self.nmcc_price2_input, self.nmcc_price3_input]:
+                price_str = input_field.text().strip()
+                if price_str:
+                    try:
+                        prices.append(float(price_str.replace(',', '.')))
+                    except ValueError:
+                        continue
+            
+            if len(prices) > 0:
+                avg_kp = sum(prices) / len(prices)
+                self.nmcc_avg_kp_label.setText(f"{avg_kp:.2f}")
+            else:
+                self.nmcc_avg_kp_label.setText("0.00")
+            
+            # 2. Средняя по ЕИС: сумма цен из таблицы "результат расчета НМЦК" / 3
+            price_col_index = FIELD_ORDER.index('price_per_unit')
+            eis_prices = []
+            for row in range(self.nmcc_table.rowCount()):
+                item = self.nmcc_table.item(row, price_col_index)
+                if item and item.text():
+                    try:
+                        price = float(item.text().replace(',', '.'))
+                        eis_prices.append(price)
+                    except ValueError:
+                        continue
+            
+            if len(eis_prices) > 0:
+                avg_eis = sum(eis_prices) / len(eis_prices)
+                self.nmcc_avg_eis_label.setText(f"{avg_eis:.2f}")
+            else:
+                self.nmcc_avg_eis_label.setText("0.00")
+            
+            # 3. Максимальное отклонение по объему: максимальная дельта между объемом в ед. измерения 
+            #    и кол-во в потребит. единице измерения / проценты (дельта/ объем в ед. измерения)
+            volume_str = self.nmcc_volume_input.text().strip()
+            if volume_str:
+                try:
+                    target_volume = float(volume_str.replace(',', '.'))
+                    
+                    qty_col_index = FIELD_ORDER.index('qty_consumption_unit')
+                    max_deviation_percent = 0.0
+                    
+                    for row in range(self.nmcc_table.rowCount()):
+                        item = self.nmcc_table.item(row, qty_col_index)
+                        if item and item.text():
+                            try:
+                                qty_text = item.text().strip().replace(',', '.').replace(' ', '')
+                                qty = float(qty_text)
+                                
+                                # Дельта = |объем - количество|
+                                delta = abs(target_volume - qty)
+                                
+                                # Процент отклонения = (дельта / объем) * 100
+                                if target_volume != 0:
+                                    deviation_percent = (delta / target_volume) * 100
+                                    if deviation_percent > max_deviation_percent:
+                                        max_deviation_percent = deviation_percent
+                            except ValueError:
+                                continue
+                    
+                    self.nmcc_max_deviation_label.setText(f"{max_deviation_percent:.2f}")
+                except ValueError:
+                    self.nmcc_max_deviation_label.setText("0.00")
+            else:
+                self.nmcc_max_deviation_label.setText("0.00")
+                
+        except Exception as e:
+            logging.error(f"Ошибка update_nmcc_summary: {e}", exc_info=True)
+            self.nmcc_avg_kp_label.setText("0.00")
+            self.nmcc_avg_eis_label.setText("0.00")
+            self.nmcc_max_deviation_label.setText("0.00")
 
     def open_csv(self):
         """Открытие CSV файла"""
