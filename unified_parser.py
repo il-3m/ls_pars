@@ -68,7 +68,7 @@ from PyQt5.QtWidgets import (
     QGridLayout, QSpacerItem, QSizePolicy,
     QComboBox, QCompleter, QFormLayout, QStatusBar,
     QListWidget, QListWidgetItem, QSplitter, QTableWidget, QTableWidgetItem,
-    QHeaderView, QFrame, QScrollArea, QTabWidget, QGroupBox
+    QHeaderView, QFrame, QScrollArea, QTabWidget, QGroupBox, QDialogButtonBox
 )
 from PyQt5.QtCore import QDate, Qt, QThread, pyqtSignal, QStringListModel, QUrl
 from PyQt5.QtGui import QColor, QDesktopServices
@@ -1078,8 +1078,8 @@ class UnifiedParserApp(QMainWindow):
         self.results_table.verticalHeader().setVisible(False)
         self.results_table.setAlternatingRowColors(True)
         self.results_table.setMinimumHeight(450)
-        # Подключаем сигнал для обработки кликов по ячейкам (для открытия ссылок)
-        self.results_table.cellDoubleClicked.connect(self.open_table_link)
+        # Подключаем сигнал для обработки кликов по ячейкам (для открытия ссылок и показа деталей)
+        self.results_table.cellDoubleClicked.connect(self.on_results_table_double_click)
         
         # Устанавливаем начальные ширины колонок
         for i in range(len(FIELD_ORDER)):
@@ -1224,6 +1224,39 @@ class UnifiedParserApp(QMainWindow):
         # Добавляем вкладки в виджет
         self.tables_tab_widget.addTab(final_tab, "Итоговая")
         self.tables_tab_widget.addTab(nmcc_tab, "НМЦК")
+        
+        # === ВКЛАДКА 3: НМЦК ручной подбор ===
+        self.manual_nmcc_tab = QWidget()
+        manual_nmcc_tab_layout = QVBoxLayout()
+        manual_nmcc_tab_layout.setSpacing(8)
+        manual_nmcc_tab_layout.setContentsMargins(8, 8, 8, 8)
+        
+        # Таблица для ручного подбора НМЦК (аналогична таблице НМЦК, но без кнопок расчета)
+        manual_nmcc_table_group = QGroupBox("Позиции для НМЦК (ручной подбор)")
+        manual_nmcc_table_layout = QVBoxLayout()
+        manual_nmcc_table_layout.setSpacing(0)
+        manual_nmcc_table_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.manual_nmcc_table = QTableWidget()
+        self.manual_nmcc_table.setColumnCount(len(FIELD_ORDER))
+        self.manual_nmcc_table.setHorizontalHeaderLabels([EXPORT_HEADERS_RU[FIELD_ORDER[i]] for i in range(len(FIELD_ORDER))])
+        self.manual_nmcc_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.manual_nmcc_table.horizontalHeader().setStretchLastSection(True)
+        self.manual_nmcc_table.verticalHeader().setVisible(False)
+        self.manual_nmcc_table.setAlternatingRowColors(True)
+        self.manual_nmcc_table.setMinimumHeight(450)
+        self.manual_nmcc_table.cellDoubleClicked.connect(self.open_manual_nmcc_table_link)
+        
+        # Устанавливаем начальные ширины колонок
+        for i in range(len(FIELD_ORDER)):
+            self.manual_nmcc_table.setColumnWidth(i, 150)
+        
+        manual_nmcc_table_layout.addWidget(self.manual_nmcc_table)
+        manual_nmcc_table_group.setLayout(manual_nmcc_table_layout)
+        manual_nmcc_tab_layout.addWidget(manual_nmcc_table_group)
+        
+        manual_nmcc_tab.setLayout(manual_nmcc_tab_layout)
+        self.tables_tab_widget.addTab(self.manual_nmcc_tab, "НМЦК ручной подбор")
         
         # Подключаем кнопки расчета
         self.nmcc_volume_btn.clicked.connect(self.calculate_nmcc_by_volume)
@@ -1409,6 +1442,8 @@ class UnifiedParserApp(QMainWindow):
             self.results_table.setRowCount(0)
             # Очищаем таблицу НМЦК
             self.nmcc_table.setRowCount(0)
+            # Очищаем таблицу НМЦК ручной подбор
+            self.manual_nmcc_table.setRowCount(0)
             # Очищаем список ссылок
             self.links_list.clear()
             # Очищаем лог
@@ -1709,6 +1744,25 @@ class UnifiedParserApp(QMainWindow):
         url = item.text()
         QDesktopServices.openUrl(QUrl(url))
     
+    def on_results_table_double_click(self, row, column):
+        """Обработка двойного клика по строке итоговой таблицы:
+        - Если клик на колонку contract_link - открываем ссылку
+        - Иначе - показываем модальное окно с деталями строки
+        """
+        # Проверяем, что кликнули на колонку contract_link
+        contract_link_col = FIELD_ORDER.index('contract_link')
+        if column == contract_link_col:
+            self.open_table_link(row, column)
+        else:
+            # Собираем данные из строки и показываем диалог
+            row_data_dict = {}
+            for col_idx, field_name in enumerate(FIELD_ORDER):
+                item = self.results_table.item(row, col_idx)
+                if item:
+                    row_data_dict[field_name] = item.text()
+            
+            self.show_row_details_dialog(row_data_dict)
+    
     def open_table_link(self, row, column):
         """Открытие ссылки из таблицы при двойном клике на ячейку contract_link"""
         # Проверяем, что кликнули на колонку contract_link
@@ -1734,6 +1788,118 @@ class UnifiedParserApp(QMainWindow):
             url = item.data(Qt.UserRole)
             if url:
                 QDesktopServices.openUrl(QUrl(url))
+    
+    def open_manual_nmcc_table_link(self, row, column):
+        """Открытие ссылки из таблицы НМЦК ручной подбор при двойном клике на ячейку contract_link"""
+        # Проверяем, что кликнули на колонку contract_link
+        contract_link_col = FIELD_ORDER.index('contract_link')
+        if column != contract_link_col:
+            return
+        
+        item = self.manual_nmcc_table.item(row, column)
+        if item:
+            url = item.data(Qt.UserRole)
+            if url:
+                QDesktopServices.openUrl(QUrl(url))
+    
+    def show_row_details_dialog(self, row_data_dict):
+        """Показ модального окна с детальными данными строки в табличном виде"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Детали позиции")
+        dialog.setMinimumWidth(600)
+        dialog.setMinimumHeight(500)
+        
+        layout = QVBoxLayout()
+        
+        # Создаем таблицу с параметрами и значениями
+        details_table = QTableWidget()
+        details_table.setColumnCount(2)
+        details_table.setHorizontalHeaderLabels(["Параметр", "Значение"])
+        details_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Interactive)
+        details_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        details_table.verticalHeader().setVisible(False)
+        details_table.setAlternatingRowColors(True)
+        
+        # Заполняем таблицу данными
+        row_num = 0
+        for field_name in FIELD_ORDER:
+            value = row_data_dict.get(field_name, "")
+            if value:  # Показываем только непустые значения
+                details_table.insertRow(row_num)
+                
+                # Параметр (название столбца)
+                param_item = QTableWidgetItem(EXPORT_HEADERS_RU.get(field_name, field_name))
+                param_item.setFlags(param_item.flags() & ~Qt.ItemIsEditable)
+                param_item.setForeground(Qt.darkGray)
+                details_table.setItem(row_num, 0, param_item)
+                
+                # Значение
+                value_item = QTableWidgetItem(str(value))
+                value_item.setFlags(value_item.flags() & ~Qt.ItemIsEditable)
+                details_table.setItem(row_num, 1, value_item)
+                
+                row_num += 1
+        
+        # Устанавливаем ширину первой колонки
+        details_table.setColumnWidth(0, 250)
+        
+        layout.addWidget(details_table)
+        
+        # Кнопка "Добавить в НМЦК"
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        
+        add_to_nmcc_btn = QPushButton("Добавить в НМЦК")
+        add_to_nmcc_btn.setToolTip("Добавить эту позицию в таблицу НМЦК ручной подбор")
+        add_to_nmcc_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 8px 16px; font-weight: bold;")
+        
+        def on_add_to_nmcc():
+            self.add_row_to_manual_nmcc_table(row_data_dict)
+            dialog.accept()
+        
+        add_to_nmcc_btn.clicked.connect(on_add_to_nmcc)
+        btn_layout.addWidget(add_to_nmcc_btn)
+        
+        # Кнопка закрытия
+        close_btn = QPushButton("Закрыть")
+        close_btn.clicked.connect(dialog.accept)
+        btn_layout.addWidget(close_btn)
+        
+        layout.addLayout(btn_layout)
+        dialog.setLayout(layout)
+        
+        dialog.exec_()
+    
+    def add_row_to_manual_nmcc_table(self, row_data: dict):
+        """Добавление строки данных в таблицу НМЦК ручной подбор"""
+        row_position = self.manual_nmcc_table.rowCount()
+        self.manual_nmcc_table.insertRow(row_position)
+        
+        for col_idx, field_name in enumerate(FIELD_ORDER):
+            value = row_data.get(field_name, "")
+            
+            # Для колонки contract_link создаем кликабельную ссылку
+            if field_name == 'contract_link' and value:
+                item = QTableWidgetItem(value)
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                font = item.font()
+                font.setUnderline(True)
+                font.setBold(True)
+                item.setFont(font)
+                item.setForeground(Qt.blue)
+                item.setData(Qt.UserRole, value)
+            else:
+                item = QTableWidgetItem(str(value) if value else "")
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+            
+            self.manual_nmcc_table.setItem(row_position, col_idx, item)
+        
+        # Переключаемся на вкладку НМЦК ручной подбор
+        tab_index = self.tables_tab_widget.indexOf(self.manual_nmcc_tab)
+        if tab_index >= 0:
+            self.tables_tab_widget.setCurrentIndex(tab_index)
+        
+        self.append_log(f"Позиция добавлена в НМЦК ручной подбор: {row_data.get('name', 'Без названия')}")
     
     def calculate_nmcc_by_volume(self):
         """Расчет НМЦК по объему: найти 3 позиции с количеством, наиболее близким к указанному объему
