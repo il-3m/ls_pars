@@ -194,7 +194,7 @@ class UnifiedParserWorker(QThread):
     
     def __init__(self, search_text, date_from, date_to, moscow_only, rosunimed_only, 
                  max_contracts, archive_dir, out_csv, out_xlsx, headed, trace,
-                 timeout_ms, expand_rounds, page_load_delay, expand_delay):
+                 timeout_ms, expand_rounds, page_load_delay, expand_delay, results_table=None):
         super().__init__()
         self.search_text = search_text
         self.date_from = date_from
@@ -215,6 +215,7 @@ class UnifiedParserWorker(QThread):
         self.found_links = []
         self.all_rows = []
         self.processed_links_count = 0  # Количество обработанных ссылок
+        self.results_table = results_table  # Ссылка на таблицу результатов для доступа к фильтру
 
     def run(self):
         try:
@@ -256,15 +257,25 @@ class UnifiedParserWorker(QThread):
                 self.parse_all_links(new_links)
                 contracts_after = len(self.all_rows)
                 
-                # Считаем уникальные контракты (по номеру реестра)
-                unique_contract_numbers = set()
-                for row in self.all_rows:
-                    if 'reestr_number' in row and row['reestr_number']:
-                        unique_contract_numbers.add(row['reestr_number'])
-                total_unique_contracts = len(unique_contract_numbers)
+                # Считаем уникальные контракты только по видимым строкам таблицы (учитывая фильтр)
+                if self.results_table is not None:
+                    unique_contract_numbers = set()
+                    for row in range(self.results_table.rowCount()):
+                        if not self.results_table.isRowHidden(row):
+                            item = self.results_table.item(row, FIELD_ORDER.index('reestr_number'))
+                            if item and item.text():
+                                unique_contract_numbers.add(item.text())
+                    total_unique_contracts = len(unique_contract_numbers)
+                else:
+                    # Для консольного режима считаем по всем данным
+                    unique_contract_numbers = set()
+                    for row in self.all_rows:
+                        if 'reestr_number' in row and row['reestr_number']:
+                            unique_contract_numbers.add(row['reestr_number'])
+                    total_unique_contracts = len(unique_contract_numbers)
                 
                 self.update_output.emit(f"Добавлено строк: {contracts_after - contracts_before}, всего строк: {len(self.all_rows)}")
-                self.update_output.emit(f"Уникальных контрактов в итоговой таблице: {total_unique_contracts}/{self.max_contracts}")
+                self.update_output.emit(f"Уникальных контрактов в итоговой таблице (с учётом фильтра): {total_unique_contracts}/{self.max_contracts}")
                 
                 if total_unique_contracts >= self.max_contracts:
                     self.update_output.emit("Целевое количество контрактов достигнуто!")
@@ -1356,7 +1367,8 @@ class UnifiedParserApp(QMainWindow):
             timeout_ms=timeout_ms,
             expand_rounds=expand_rounds,
             page_load_delay=page_load_delay,
-            expand_delay=expand_delay
+            expand_delay=expand_delay,
+            results_table=self.results_table
         )
         
         self.thread.update_progress.connect(self.progress_bar.setValue)
@@ -1779,7 +1791,8 @@ def main():
             timeout_ms=args.timeout_ms,
             expand_rounds=args.expand_rounds,
             page_load_delay=1200,
-            expand_delay=800
+            expand_delay=800,
+            results_table=None
         )
         
         def print_output(text):
