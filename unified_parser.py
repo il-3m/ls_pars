@@ -764,8 +764,8 @@ class UnifiedParserApp(QMainWindow):
             }
             QTabWidget::tab-bar { alignment: left; }
             QTabBar::tab { 
-                background-color: #ffffff; 
-                color: #000000; 
+                background-color: #e0e0e0; 
+                color: #333333; 
                 padding: 6px 12px; 
                 margin-right: 2px;
                 border: 1px solid #999999;
@@ -775,6 +775,7 @@ class UnifiedParserApp(QMainWindow):
                 background-color: #ffffff; 
                 color: #000000;
                 border-bottom: 1px solid #ffffff;
+                font-weight: bold;
             }
             QTabBar::tab:hover:!selected { background-color: #f5f5f5; }
             QTableWidget { 
@@ -1335,6 +1336,20 @@ class UnifiedParserApp(QMainWindow):
         self.manual_nmcc_tab.setLayout(manual_nmcc_tab_layout)
         self.tables_tab_widget.addTab(self.manual_nmcc_tab, "НМЦК ручной подбор")
         
+        # Подключаем сигналы для синхронизации полей ввода НМЦК между вкладками
+        self.nmcc_price1_input.textChanged.connect(self.sync_nmcc_price1)
+        self.nmcc_price2_input.textChanged.connect(self.sync_nmcc_price2)
+        self.nmcc_price3_input.textChanged.connect(self.sync_nmcc_price3)
+        self.nmcc_volume_input.textChanged.connect(self.sync_nmcc_volume)
+        
+        self.manual_nmcc_price1_input.textChanged.connect(self.sync_manual_nmcc_price1)
+        self.manual_nmcc_price2_input.textChanged.connect(self.sync_manual_nmcc_price2)
+        self.manual_nmcc_price3_input.textChanged.connect(self.sync_manual_nmcc_price3)
+        self.manual_nmcc_volume_input.textChanged.connect(self.sync_manual_nmcc_volume)
+        
+        # Флаг для предотвращения рекурсивной синхронизации
+        self._syncing_nmcc_fields = False
+        
         # Подключаем кнопки расчета
         self.nmcc_volume_btn.clicked.connect(self.calculate_nmcc_by_volume)
         self.nmcc_avg_btn.clicked.connect(self.calculate_nmcc_by_avg_price)
@@ -1424,6 +1439,9 @@ class UnifiedParserApp(QMainWindow):
         help_menu = menubar.addMenu("Помощь")
         about_action = help_menu.addAction("О программе")
         about_action.triggered.connect(self.show_about)
+        
+        help_action = help_menu.addAction("Инструкция")
+        help_action.triggered.connect(self.show_help)
 
     def on_checkbox_toggled(self, checkbox_type):
         """Обработка переключения чекбоксов"""
@@ -1535,17 +1553,31 @@ class UnifiedParserApp(QMainWindow):
             self.all_rows = []
             # Сбрасываем фильтр
             self.filter_before_search = ""
-            # Очищаем поля ввода НМЦК
+            
+            # Очищаем поля ввода НМЦК (синхронизируется между вкладками)
             self.nmcc_price1_input.clear()
             self.nmcc_price2_input.clear()
             self.nmcc_price3_input.clear()
             self.nmcc_volume_input.clear()
+            
             # Сбрасываем итоговые данные
             self.nmcc_avg_kp_label.setText("0.00")
             self.nmcc_avg_eis_label.setText("0.00")
             self.nmcc_price_delta_label.setText("0.00 (0.00%)")
             self.nmcc_max_deviation_label.setText("0.00 (0.00%)")
-            # НЕ очищаем поля фильтров и базу данных (reference_data остается загруженной)
+            
+            # Сбрасываем индикацию кнопок НМЦК
+            self.nmcc_volume_btn.setStyleSheet("")
+            self.nmcc_avg_btn.setStyleSheet("")
+            self.nmcc_optimal_btn.setStyleSheet("")
+            
+            # Сбрасываем поля "Поисковый запрос" и фильтры
+            self.search_input.setCurrentText("")
+            self.filter_result_input.setCurrentText("")
+            self.filter_form_input.setCurrentText("")
+            self.filter_dose_input.setCurrentText("")
+            
+            # НЕ очищаем базу данных (reference_data остается загруженной)
             # Обновляем статус
             self.status_label.setText("Данные сброшены")
             self.append_log("=== ДАННЫЕ СБРОШЕНЫ ПОЛЬЗОВАТЕЛЕМ ===")
@@ -2482,6 +2514,63 @@ class UnifiedParserApp(QMainWindow):
             self.manual_nmcc_price_delta_label.setText("0.00 (0.00%)")
             self.manual_nmcc_max_deviation_label.setText("0.00 (0.00%)")
 
+    # Методы для синхронизации полей ввода НМЦК между вкладками
+    def sync_nmcc_price1(self, text):
+        """Синхронизация поля цены 1 из вкладки НМЦК во вкладку ручной подбор"""
+        if not self._syncing_nmcc_fields:
+            self._syncing_nmcc_fields = True
+            self.manual_nmcc_price1_input.setText(text)
+            self._syncing_nmcc_fields = False
+    
+    def sync_nmcc_price2(self, text):
+        """Синхронизация поля цены 2 из вкладки НМЦК во вкладку ручной подбор"""
+        if not self._syncing_nmcc_fields:
+            self._syncing_nmcc_fields = True
+            self.manual_nmcc_price2_input.setText(text)
+            self._syncing_nmcc_fields = False
+    
+    def sync_nmcc_price3(self, text):
+        """Синхронизация поля цены 3 из вкладки НМЦК во вкладку ручной подбор"""
+        if not self._syncing_nmcc_fields:
+            self._syncing_nmcc_fields = True
+            self.manual_nmcc_price3_input.setText(text)
+            self._syncing_nmcc_fields = False
+    
+    def sync_nmcc_volume(self, text):
+        """Синхронизация поля объема из вкладки НМЦК во вкладку ручной подбор"""
+        if not self._syncing_nmcc_fields:
+            self._syncing_nmcc_fields = True
+            self.manual_nmcc_volume_input.setText(text)
+            self._syncing_nmcc_fields = False
+    
+    def sync_manual_nmcc_price1(self, text):
+        """Синхронизация поля цены 1 из вкладки ручной подбор во вкладку НМЦК"""
+        if not self._syncing_nmcc_fields:
+            self._syncing_nmcc_fields = True
+            self.nmcc_price1_input.setText(text)
+            self._syncing_nmcc_fields = False
+    
+    def sync_manual_nmcc_price2(self, text):
+        """Синхронизация поля цены 2 из вкладки ручной подбор во вкладку НМЦК"""
+        if not self._syncing_nmcc_fields:
+            self._syncing_nmcc_fields = True
+            self.nmcc_price2_input.setText(text)
+            self._syncing_nmcc_fields = False
+    
+    def sync_manual_nmcc_price3(self, text):
+        """Синхронизация поля цены 3 из вкладки ручной подбор во вкладку НМЦК"""
+        if not self._syncing_nmcc_fields:
+            self._syncing_nmcc_fields = True
+            self.nmcc_price3_input.setText(text)
+            self._syncing_nmcc_fields = False
+    
+    def sync_manual_nmcc_volume(self, text):
+        """Синхронизация поля объема из вкладки ручной подбор во вкладку НМЦК"""
+        if not self._syncing_nmcc_fields:
+            self._syncing_nmcc_fields = True
+            self.nmcc_volume_input.setText(text)
+            self._syncing_nmcc_fields = False
+
     def open_csv(self):
         """Открытие CSV файла"""
         csv_path = Path(self.csv_file_input.text())
@@ -2515,6 +2604,118 @@ class UnifiedParserApp(QMainWindow):
             "Объединяет поиск ссылок и парсинг данных\n"
             "в едином цикле с накоплением результатов."
         )
+
+    def show_help(self):
+        """Показать инструкцию по работе с программой"""
+        help_dialog = QDialog(self)
+        help_dialog.setWindowTitle("Инструкция по работе с программой")
+        help_dialog.setMinimumSize(700, 600)
+        
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # Создаем QTextEdit для отображения текста инструкции с прокруткой
+        help_text = QTextEdit()
+        help_text.setReadOnly(True)
+        help_text.setHtml("""
+        <h2 style="color: #0066cc;">Инструкция по работе с Универсальным парсером ЕИС</h2>
+        
+        <h3>1. Начало работы</h3>
+        <p><b>1.1.</b> Загрузите базу данных МНН, нажав кнопку "База данных" в левой панели и выбрав файл 
+        <code>esklp_smnn_*.xlsx</code>. После загрузки станет доступен автокомплит для МНН, форм выпуска и дозировок.</p>
+        
+        <h3>2. Поиск и парсинг данных</h3>
+        <p><b>2.1.</b> Введите поисковый запрос (МНН) в поле "Поисковый запрос". При загруженной базе данных 
+        будет работать автодополнение.</p>
+        <p><b>2.2.</b> При необходимости установите даты поиска в полях "С" и "По".</p>
+        <p><b>2.3.</b> Выберите фильтры:</p>
+        <ul>
+            <li><b>Только Москва</b> — поиск только по контрактам Москвы и МО</li>
+            <li><b>Только Росунимед</b> — поиск только по контрактам РОСУНИМЕД</li>
+        </ul>
+        <p><b>2.4.</b> Установите фильтры по МНН, форме выпуска и дозировке (доступны при загруженной базе данных).</p>
+        <p><b>2.5.</b> Нажмите кнопку "Старт" для начала парсинга.</p>
+        <p><b>2.6.</b> Результаты будут отображаться во вкладке "Итоговая" в виде таблицы.</p>
+        
+        <h3>3. Работа с результатами</h3>
+        <p><b>3.1.</b> Таблица результатов содержит все найденные позиции. Двойной клик по ссылке в колонке 
+        "Контракт (ссылка)" откроет её в браузере.</p>
+        <p><b>3.2.</b> Используйте фильтры для отбора нужных позиций по МНН, форме выпуска и дозировке.</p>
+        <p><b>3.3.</b> Для выгрузки данных нажмите "Выгрузить в Excel" или "Выгрузить в CSV".</p>
+        
+        <h3>4. Расчет НМЦК</h3>
+        <p>Вкладка "НМЦК" предназначена для расчета начальной максимальной цены контракта.</p>
+        <p><b>4.1.</b> Введите данные для расчета в блок "Ввод данных для расчета НМЦК":</p>
+        <ul>
+            <li>Цена за ед. измерения по 1, 2, 3 КП (коммерческим предложениям)</li>
+            <li>Объем в ед. измерения (требуемое количество)</li>
+        </ul>
+        <p><b>4.2.</b> Используйте кнопки расчета:</p>
+        <ul>
+            <li><b>НМЦК по объему</b> — находит 3 позиции с количеством, наиболее близким к указанному объему</li>
+            <li><b>НМЦК приближенный к КП</b> — находит 3 позиции со средней ценой, наиболее близкой к средней по введенным КП</li>
+            <li><b>НМЦК Оптимальный</b> — оптимальный алгоритм с приоритетом "вписаться в цену" и минимизацией разброса по объему</li>
+        </ul>
+        <p><b>4.3.</b> Результаты расчета отображаются в таблице "Результат расчета НМЦК (3 позиции)".</p>
+        <p><b>4.4.</b> Блок "Итоговые данные" показывает:</p>
+        <ul>
+            <li>Средняя цена по КП</li>
+            <li>Средняя по ЕИС</li>
+            <li>Дельта средних цен (абсолютная и процентная)</li>
+            <li>Макс. отклонение по объему (абсолютное и процентное)</li>
+        </ul>
+        
+        <h3>5. НМЦК ручной подбор</h3>
+        <p>Вкладка "НМЦК ручной подбор" позволяет вручную формировать список позиций для НМЦК.</p>
+        <p><b>5.1.</b> Двойной клик по строке в таблице результатов добавляет позицию в таблицу ручного подбора.</p>
+        <p><b>5.2.</b> Поля ввода данных синхронизированы между вкладками "НМЦК" и "НМЦК ручной подбор".</p>
+        
+        <h3>6. Настройки</h3>
+        <p>Во вкладке "Настройки" можно изменить параметры парсинга:</p>
+        <ul>
+            <li>Максимум контрактов — целевое количество контрактов для сбора</li>
+            <li>Таймаут ожидания (мс) — время ожидания загрузки страниц</li>
+            <li>Раунды раскрытия — количество раундов раскрытия списков</li>
+            <li>Задержка загрузки страницы (мс)</li>
+            <li>Задержка раскрытия (мс)</li>
+        </ul>
+        
+        <h3>7. Сброс данных</h3>
+        <p>Кнопка "Сброс" очищает:</p>
+        <ul>
+            <li>Все данные из таблиц результатов</li>
+            <li>Список найденных ссылок</li>
+            <li>Лог выполнения</li>
+            <li>Поля ввода НМЦК</li>
+            <li>Индикацию кнопок расчета НМЦК</li>
+            <li>Поисковый запрос и фильтры</li>
+        </ul>
+        
+        <h3>8. Меню</h3>
+        <p><b>Файл → Выход</b> — закрытие приложения.</p>
+        <p><b>Помощь → О программе</b> — информация о программе.</p>
+        <p><b>Помощь → Инструкция</b> — открытие этого окна.</p>
+        
+        <hr>
+        <p style="color: #666; font-size: 11px;"><i>Для дополнительной информации обратитесь к разработчику.</i></p>
+        """)
+        
+        layout.addWidget(help_text)
+        
+        # Кнопка закрытия
+        close_button = QPushButton("Закрыть")
+        close_button.setFixedWidth(120)
+        close_button.clicked.connect(help_dialog.close)
+        
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        button_layout.addWidget(close_button)
+        button_layout.addStretch()
+        layout.addLayout(button_layout)
+        
+        help_dialog.setLayout(layout)
+        help_dialog.exec_()
 
     def load_reference_database(self):
         """Загрузка базы данных МНН, формы выпуска и дозировки из файла esklp_smnn_*.xlsx в отдельном потоке"""
