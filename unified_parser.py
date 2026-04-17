@@ -1680,7 +1680,18 @@ class UnifiedParserApp(QMainWindow):
                 QDesktopServices.openUrl(QUrl(url))
     
     def calculate_nmcc_by_volume(self):
-        """Расчет НМЦК по объему: найти 3 позиции с количеством, наиболее близким к указанному объему"""
+        """Расчет НМЦК по объему: найти 3 позиции с количеством, наиболее близким к указанному объему
+        
+        Логика:
+        1. Берем все значения из столбца "кол-во в потреб. единицах измерения"
+        2. Приводим их к числу (обрабатываем запятые, пробелы как разделители тысяч)
+        3. Сравниваем с целевым объемом через абсолютную разницу
+        4. Выводим 3 наиболее близких значения (по возрастанию дельты)
+        
+        Пример: при вводе 8000 из значений [1000, 2500, 5000, 8500, 10000]
+        дельты: |1000-8000|=7000, |2500-8000|=5500, |5000-8000|=3000, |8500-8000|=500, |10000-8000|=2000
+        будут выбраны: 8500 (дельта 500), 10000 (дельта 2000), 5000 (дельта 3000)
+        """
         try:
             # Получаем объем из поля ввода
             volume_str = self.nmcc_volume_input.text().strip()
@@ -1693,35 +1704,43 @@ class UnifiedParserApp(QMainWindow):
             # Находим индекс колонки qty_consumption_unit
             qty_col_index = FIELD_ORDER.index('qty_consumption_unit')
             
-            # Собираем все видимые строки из итоговой таблицы
+            # Собираем все видимые строки из итоговой таблицы с корректными числовыми значениями
             rows_with_qty = []
             for row in range(self.results_table.rowCount()):
                 if not self.results_table.isRowHidden(row):
                     item = self.results_table.item(row, qty_col_index)
                     if item and item.text():
                         try:
-                            qty = float(item.text().replace(',', '.'))
+                            # Очищаем значение от лишних символов и приводим к float
+                            qty_text = item.text().strip().replace(',', '.')
+                            # Удаляем возможные пробелы как разделители тысяч (например "1 000" -> "1000")
+                            qty_text = qty_text.replace(' ', '')
+                            qty = float(qty_text)
                             rows_with_qty.append((row, qty))
                         except ValueError:
+                            # Пропускаем строки с некорректными числовыми данными
                             continue
             
             if len(rows_with_qty) < 3:
                 QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено позиций: {len(rows_with_qty)}, требуется минимум 3")
                 return
             
-            # Сортируем по дельте (разнице) между объемом в таблице и целевым объемом
+            # Сортируем по абсолютной дельте между объемом в таблице и целевым объемом
+            # Это обеспечивает выбор наиболее близких значений независимо от того, больше они или меньше
             rows_with_qty.sort(key=lambda x: abs(x[1] - target_volume))
             
-            # Берем 3 наиболее близких
+            # Берем 3 наиболее близких значения
             top_3_rows = rows_with_qty[:3]
             
-            # Заполняем таблицу НМЦК
+            # Заполняем таблицу НМЦК отобранными строками
             self.fill_nmcc_table(top_3_rows)
             
             # Переключаемся на вкладку НМЦК
             self.tables_tab_widget.setCurrentIndex(1)
             
-            self.append_log(f"НМЦК по объему: выбрано 3 позиции с объемом, близким к {target_volume}")
+            # Формируем подробное сообщение о результатах
+            selected_volumes = [f"{row[1]:.2f}" for row in top_3_rows]
+            self.append_log(f"НМЦК по объему: целевой объем={target_volume}, выбрано 3 позиции: {', '.join(selected_volumes)}")
             
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка при расчете НМЦК по объему: {e}")
