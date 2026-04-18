@@ -2457,8 +2457,20 @@ class UnifiedParserApp(QMainWindow):
                 else:
                     price_delta_percent = 0.0
                 self.nmcc_price_delta_label.setText(f"{price_delta_abs:.2f} ({price_delta_percent:.2f}%)")
+                
+                # Выделяем бордовым цветом, если средняя цена по ЕИС ниже средней цены по КП
+                if avg_eis < avg_kp:
+                    burgundy_color = "#800020"  # Бордовый цвет
+                    self.nmcc_avg_eis_label.setStyleSheet(f"font-weight: bold; color: {burgundy_color};")
+                    self.nmcc_price_delta_label.setStyleSheet(f"font-weight: bold; color: {burgundy_color};")
+                else:
+                    # Возвращаем стандартный цвет
+                    self.nmcc_avg_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+                    self.nmcc_price_delta_label.setStyleSheet("font-weight: bold; color: #0066cc;")
             else:
                 self.nmcc_price_delta_label.setText("0.00 (0.00%)")
+                self.nmcc_avg_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+                self.nmcc_price_delta_label.setStyleSheet("font-weight: bold; color: #0066cc;")
             
             # 4. Максимальное отклонение по объему: абсолютное и относительное
             volume_str = self.nmcc_volume_input.text().strip()
@@ -2548,8 +2560,20 @@ class UnifiedParserApp(QMainWindow):
                 else:
                     price_delta_percent = 0.0
                 self.manual_nmcc_price_delta_label.setText(f"{price_delta_abs:.2f} ({price_delta_percent:.2f}%)")
+                
+                # Выделяем бордовым цветом, если средняя цена по ЕИС ниже средней цены по КП
+                if avg_eis < avg_kp:
+                    burgundy_color = "#800020"  # Бордовый цвет
+                    self.manual_nmcc_avg_eis_label.setStyleSheet(f"font-weight: bold; color: {burgundy_color};")
+                    self.manual_nmcc_price_delta_label.setStyleSheet(f"font-weight: bold; color: {burgundy_color};")
+                else:
+                    # Возвращаем стандартный цвет
+                    self.manual_nmcc_avg_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+                    self.manual_nmcc_price_delta_label.setStyleSheet("font-weight: bold; color: #0066cc;")
             else:
                 self.manual_nmcc_price_delta_label.setText("0.00 (0.00%)")
+                self.manual_nmcc_avg_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+                self.manual_nmcc_price_delta_label.setStyleSheet("font-weight: bold; color: #0066cc;")
             
             # 4. Максимальное отклонение по объему: абсолютное и относительное
             volume_str = self.manual_nmcc_volume_input.text().strip()
@@ -2664,8 +2688,262 @@ class UnifiedParserApp(QMainWindow):
             QMessageBox.critical(self, "Ошибка", f"Не удалось открыть CSV: {e}")
 
     def open_price_dialog(self):
-        """Заглушка для кнопки 'Цена' - будет реализована позже"""
-        QMessageBox.information(self, "Цена", "Функция в разработке")
+        """Открытие модального окна с аналитикой по цене"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Аналитика по цене")
+        dialog.setMinimumSize(800, 600)
+        
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # Заголовок
+        title_label = QLabel("<h2 style='color: #0066cc;'>Аналитика по цене</h2>")
+        layout.addWidget(title_label)
+        
+        # Получаем все данные из таблицы результатов
+        all_prices = []
+        all_volumes = []
+        price_volume_pairs = []  # (price, volume) пары
+        
+        price_col_index = FIELD_ORDER.index('price_per_unit')
+        volume_col_index = FIELD_ORDER.index('qty_consumption_unit')
+        
+        for row in range(self.results_table.rowCount()):
+            if not self.results_table.isRowHidden(row):
+                # Цена
+                price_item = self.results_table.item(row, price_col_index)
+                if price_item and price_item.text():
+                    try:
+                        price = float(price_item.text().replace(',', '.').replace(' ', ''))
+                        if price > 0:
+                            all_prices.append(price)
+                    except ValueError:
+                        pass
+                
+                # Объем (количество в потреб. единицах)
+                volume_item = self.results_table.item(row, volume_col_index)
+                if volume_item and volume_item.text():
+                    try:
+                        volume_text = volume_item.text().strip().replace(',', '.').replace(' ', '')
+                        volume = float(volume_text)
+                        if volume > 0:
+                            all_volumes.append(volume)
+                            # Если есть и цена, сохраняем пару
+                            if price_item and price_item.text():
+                                try:
+                                    price = float(price_item.text().replace(',', '.').replace(' ', ''))
+                                    if price > 0:
+                                        price_volume_pairs.append((volume, price))
+                                except ValueError:
+                                    pass
+                    except ValueError:
+                        pass
+        
+        # Создаем скролл-область для контента
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout()
+        scroll_layout.setSpacing(15)
+        
+        # 1. Средняя цена по всем позициям
+        if all_prices:
+            avg_price = sum(all_prices) / len(all_prices)
+            avg_price_label = QLabel(f"<b>1. Средняя цена по всем позициям:</b> {avg_price:.2f} ₽")
+            avg_price_label.setStyleSheet("font-size: 14px; padding: 10px; background-color: #E3F2FD; border-radius: 5px;")
+            scroll_layout.addWidget(avg_price_label)
+        else:
+            no_data_label = QLabel("<i>Нет данных о цене для расчета</i>")
+            no_data_label.setStyleSheet("color: #999999; font-size: 12px;")
+            scroll_layout.addWidget(no_data_label)
+        
+        # 2. Средний объем по всем позициям
+        if all_volumes:
+            avg_volume = sum(all_volumes) / len(all_volumes)
+            avg_volume_label = QLabel(f"<b>2. Средний объем по всем позициям:</b> {avg_volume:.2f} ед.")
+            avg_volume_label.setStyleSheet("font-size: 14px; padding: 10px; background-color: #E8F5E9; border-radius: 5px;")
+            scroll_layout.addWidget(avg_volume_label)
+        
+        # 3. Реалистичная цена (отбрасываем выбросы)
+        if all_prices:
+            realistic_price_info = self.calculate_realistic_price(all_prices)
+            realistic_label = QLabel(
+                f"<b>3. Реалистичная цена:</b> {realistic_price_info['price']:.2f} ₽<br>"
+                f"<span style='font-size: 12px; color: #666666;'>("
+                f"отброшено {realistic_price_info['outliers_count']} позиций ({realistic_price_info['outliers_percent']:.1f}%), "
+                f"осталось {realistic_price_info['filtered_count']} позиций для расчета)"
+                f"</span>"
+            )
+            realistic_label.setStyleSheet("font-size: 14px; padding: 10px; background-color: #FFF3E0; border-radius: 5px;")
+            scroll_layout.addWidget(realistic_label)
+        
+        # 4. Зависимость цены от объема (если есть данные)
+        if price_volume_pairs and len(price_volume_pairs) >= 3:
+            volume_price_table = self.analyze_volume_price_dependency(price_volume_pairs)
+            if volume_price_table:
+                dependency_group = QGroupBox("4. Зависимость цены от объема")
+                dependency_layout = QVBoxLayout()
+                
+                table_widget = QTableWidget()
+                table_widget.setColumnCount(3)
+                table_widget.setHorizontalHeaderLabels(["Диапазон объема", "Средняя цена (₽)", "Количество позиций"])
+                table_widget.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+                table_widget.verticalHeader().setVisible(False)
+                table_widget.setAlternatingRowColors(True)
+                table_widget.setMaximumHeight(200)
+                
+                for i, row_data in enumerate(volume_price_table):
+                    table_widget.insertRow(i)
+                    table_widget.setItem(i, 0, QTableWidgetItem(row_data['range']))
+                    table_widget.setItem(i, 1, QTableWidgetItem(f"{row_data['avg_price']:.2f}"))
+                    table_widget.setItem(i, 2, QTableWidgetItem(str(row_data['count'])))
+                
+                dependency_layout.addWidget(table_widget)
+                dependency_group.setLayout(dependency_layout)
+                scroll_layout.addWidget(dependency_group)
+        
+        # Алгоритм расчета
+        algorithm_group = QGroupBox("Алгоритм расчета показателей")
+        algorithm_layout = QVBoxLayout()
+        algorithm_text = QTextEdit()
+        algorithm_text.setReadOnly(True)
+        algorithm_text.setMaximumHeight(200)
+        algorithm_text.setHtml("""
+        <div style='font-size: 12px; line-height: 1.5;'>
+        <p><b>1. Средняя цена:</b> Простое среднее арифметическое всех цен: Σ(цена) / N</p>
+        
+        <p><b>2. Средний объем:</b> Простое среднее арифметическое всех объемов: Σ(объем) / N</p>
+        
+        <p><b>3. Реалистичная цена:</b></p>
+        <ul>
+        <li>Вычисляем среднее арифметическое (μ) и стандартное отклонение (σ) всех цен</li>
+        <li>Отбрасываем выбросы: позиции, где цена выходит за пределы [μ - 2σ; μ + 2σ]</li>
+        <li>Пересчитываем среднее по оставшимся позициям</li>
+        <li>Этот метод (правило 2-х сигм) позволяет исключить аномально высокие и низкие цены</li>
+        </ul>
+        
+        <p><b>4. Зависимость цены от объема:</b></p>
+        <ul>
+        <li>Все позиции группируются по диапазонам объема (квантили: 0-25%, 25-50%, 50-75%, 75-100%)</li>
+        <li>Для каждого диапазона рассчитывается средняя цена</li>
+        <li>Это позволяет выявить закономерности оптового ценообразования</li>
+        </ul>
+        </div>
+        """)
+        algorithm_layout.addWidget(algorithm_text)
+        algorithm_group.setLayout(algorithm_layout)
+        scroll_layout.addWidget(algorithm_group)
+        
+        # Пустое пространство внизу
+        scroll_layout.addStretch()
+        
+        scroll_content.setLayout(scroll_layout)
+        scroll_area.setWidget(scroll_content)
+        layout.addWidget(scroll_area)
+        
+        # Кнопка закрытия
+        close_btn = QPushButton("Закрыть")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        
+        dialog.setLayout(layout)
+        dialog.exec_()
+    
+    def calculate_realistic_price(self, prices):
+        """
+        Расчет реалистичной цены с отбрасыванием выбросов
+        Использует правило 2-х сигм (2 стандартных отклонения)
+        """
+        import statistics
+        
+        if len(prices) < 3:
+            return {
+                'price': sum(prices) / len(prices) if prices else 0,
+                'outliers_count': 0,
+                'outliers_percent': 0,
+                'filtered_count': len(prices)
+            }
+        
+        # Вычисляем среднее и стандартное отклонение
+        mean_price = statistics.mean(prices)
+        stdev_price = statistics.stdev(prices)
+        
+        # Определяем границы для отсечения выбросов
+        lower_bound = mean_price - 2 * stdev_price
+        upper_bound = mean_price + 2 * stdev_price
+        
+        # Фильтруем цены, оставляя только те, что в пределах границ
+        filtered_prices = [p for p in prices if lower_bound <= p <= upper_bound]
+        
+        outliers_count = len(prices) - len(filtered_prices)
+        outliers_percent = (outliers_count / len(prices)) * 100 if prices else 0
+        
+        # Пересчитываем среднее по отфильтрованным ценам
+        realistic_price = statistics.mean(filtered_prices) if filtered_prices else mean_price
+        
+        return {
+            'price': realistic_price,
+            'outliers_count': outliers_count,
+            'outliers_percent': outliers_percent,
+            'filtered_count': len(filtered_prices)
+        }
+    
+    def analyze_volume_price_dependency(self, price_volume_pairs):
+        """
+        Анализ зависимости цены от объема
+        Возвращает таблицу с диапазонами объемов и соответствующими средними ценами
+        """
+        if len(price_volume_pairs) < 3:
+            return None
+        
+        # Сортируем по объему
+        sorted_pairs = sorted(price_volume_pairs, key=lambda x: x[0])
+        volumes = [p[0] for p in sorted_pairs]
+        
+        # Разбиваем на квантили (4 группы)
+        import numpy as np
+        
+        try:
+            quantiles = np.percentile(volumes, [25, 50, 75])
+        except:
+            # Если numpy не доступен, используем простой метод
+            sorted_volumes = sorted(volumes)
+            n = len(sorted_volumes)
+            quantiles = [
+                sorted_volumes[n // 4],
+                sorted_volumes[n // 2],
+                sorted_volumes[3 * n // 4]
+            ]
+        
+        # Определяем диапазоны
+        ranges = [
+            (0, quantiles[0]),
+            (quantiles[0], quantiles[1]),
+            (quantiles[1], quantiles[2]),
+            (quantiles[2], float('inf'))
+        ]
+        
+        range_labels = [
+            f"0 - {quantiles[0]:.1f}",
+            f"{quantiles[0]:.1f} - {quantiles[1]:.1f}",
+            f"{quantiles[1]:.1f} - {quantiles[2]:.1f}",
+            f"> {quantiles[2]:.1f}"
+        ]
+        
+        result = []
+        for i, (low, high) in enumerate(ranges):
+            # Фильтруем пары в этом диапазоне
+            group_prices = [p[1] for p in sorted_pairs if low <= p[0] < high]
+            
+            if group_prices:
+                result.append({
+                    'range': range_labels[i],
+                    'avg_price': sum(group_prices) / len(group_prices),
+                    'count': len(group_prices)
+                })
+        
+        return result if result else None
 
     def open_folder(self):
         """Открытие папки с результатами"""
