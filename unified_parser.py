@@ -1618,6 +1618,7 @@ class UnifiedParserApp(QMainWindow):
             self.nmcc_min_btn.setStyleSheet("")
             self.nmcc_avg_btn.setStyleSheet("")
             self.nmcc_optimal_btn.setStyleSheet("")
+            self.nmcc_ideal_btn.setStyleSheet("")
             
             # Сбрасываем итоговые данные вкладки "НМЦК ручной подбор"
             self.manual_nmcc_avg_kp_label.setText("0.00")
@@ -2881,6 +2882,7 @@ class UnifiedParserApp(QMainWindow):
             self.nmcc_min_btn.setStyleSheet("")
             self.nmcc_avg_btn.setStyleSheet("")
             self.nmcc_optimal_btn.setStyleSheet("")
+            self.nmcc_ideal_btn.setStyleSheet("")
             
             # Переключаемся на вкладку НМЦК
             self.tables_tab_widget.setCurrentIndex(1)
@@ -3032,6 +3034,7 @@ class UnifiedParserApp(QMainWindow):
             self.nmcc_volume_btn.setStyleSheet("")
             self.nmcc_avg_btn.setStyleSheet("")
             self.nmcc_optimal_btn.setStyleSheet("")
+            self.nmcc_ideal_btn.setStyleSheet("")
             
             # Переключаемся на вкладку НМЦК
             self.tables_tab_widget.setCurrentIndex(1)
