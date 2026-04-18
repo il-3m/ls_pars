@@ -761,12 +761,13 @@ class UnifiedParserApp(QMainWindow):
             QTabWidget::pane { 
                 border: 1px solid #999999; 
                 background-color: white; 
+                margin-top: 0px;
             }
             QTabWidget::tab-bar { alignment: left; }
             QTabBar::tab { 
                 background-color: #e0e0e0; 
                 color: #333333; 
-                padding: 6px 12px; 
+                padding: 8px 16px; 
                 margin-right: 2px;
                 border: 1px solid #999999;
                 border-bottom: none;
@@ -776,6 +777,9 @@ class UnifiedParserApp(QMainWindow):
                 color: #000000;
                 border-bottom: 1px solid #ffffff;
                 font-weight: bold;
+                margin-top: -1px;
+                padding-top: 9px;
+                padding-bottom: 7px;
             }
             QTabBar::tab:hover:!selected { background-color: #f5f5f5; }
             QTableWidget { 
@@ -866,8 +870,9 @@ class UnifiedParserApp(QMainWindow):
         main_tab_layout.addWidget(max_contracts_label)
         main_tab_layout.addWidget(self.max_contracts_input)
 
-        # Фильтры
+        # Фильтры - защита от сворачивания на маленьких экранах
         filter_group = QGroupBox("Фильтры")
+        filter_group.setMinimumHeight(80)  # Минимальная высота для предотвращения сворачивания
         filter_layout = QVBoxLayout()
         filter_layout.setSpacing(4)
         
@@ -911,11 +916,7 @@ class UnifiedParserApp(QMainWindow):
         main_tab_layout.addWidget(filter_dose_label)
         main_tab_layout.addWidget(self.filter_dose_input)
 
-        # Кнопка "Фильтровать" (под полями фильтров)
-        self.filter_button = QPushButton('ФИЛЬТРОВАТЬ')
-        self.filter_button.setMinimumHeight(30)
-        self.filter_button.clicked.connect(self.apply_filter)
-        main_tab_layout.addWidget(self.filter_button)
+        # Кнопка "Фильтровать" удалена по требованию
 
         # Кнопка загрузки базы данных с индикатором статуса
         db_button_layout = QHBoxLayout()
@@ -1039,15 +1040,15 @@ class UnifiedParserApp(QMainWindow):
         actions_layout = QHBoxLayout()
         actions_layout.setSpacing(6)
         
-        self.open_csv_button = QPushButton('Открыть CSV')
-        self.open_csv_button.clicked.connect(self.open_csv)
+        self.price_button = QPushButton('Цена')  # Новая кнопка вместо "Открыть CSV"
+        self.price_button.clicked.connect(self.open_price_dialog)  # Пока без функции
         self.open_folder_button = QPushButton('Папка')
         self.open_folder_button.clicked.connect(self.open_folder)
         self.reset_button = QPushButton('СБРОС')
         self.reset_button.setStyleSheet("background-color: #ffcccc;")
         self.reset_button.clicked.connect(self.reset_data)
         
-        actions_layout.addWidget(self.open_csv_button)
+        actions_layout.addWidget(self.price_button)
         actions_layout.addWidget(self.open_folder_button)
         actions_layout.addWidget(self.reset_button)
         left_layout.addLayout(actions_layout)
@@ -1061,8 +1062,36 @@ class UnifiedParserApp(QMainWindow):
         right_layout.setSpacing(0)
         right_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Вкладки для таблиц: "Итоговая" и "НМЦК"
+        # Вкладки для таблиц: "Итоговая" и "НМЦК" - выравнивание по верхнему уровню с левой панелью
         self.tables_tab_widget = QTabWidget()
+        self.tables_tab_widget.setObjectName("tables_tab_widget")
+        
+        # Добавляем стиль для правого таб-виджета чтобы он был на одном уровне с левым
+        self.setStyleSheet(self.styleSheet() + """
+            #tables_tab_widget::pane { 
+                border: 1px solid #999999; 
+                background-color: white; 
+                margin-top: 0px;
+            }
+            #tables_tab_widget::tab-bar { alignment: left; }
+            #tables_tab_widget QTabBar::tab { 
+                background-color: #e0e0e0; 
+                color: #333333; 
+                padding: 8px 16px; 
+                margin-right: 2px;
+                border: 1px solid #999999;
+                border-bottom: none;
+            }
+            #tables_tab_widget QTabBar::tab:selected { 
+                background-color: #ffffff; 
+                color: #000000;
+                border-bottom: 1px solid #ffffff;
+                font-weight: bold;
+                margin-top: -1px;
+                padding-top: 9px;
+                padding-bottom: 7px;
+            }
+        """)
         
         # === ВКЛАДКА 1: ИТОГОВАЯ ТАБЛИЦА ===
         final_tab = QWidget()
@@ -2641,6 +2670,10 @@ class UnifiedParserApp(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось открыть CSV: {e}")
 
+    def open_price_dialog(self):
+        """Заглушка для кнопки 'Цена' - будет реализована позже"""
+        QMessageBox.information(self, "Цена", "Функция в разработке")
+
     def open_folder(self):
         """Открытие папки с результатами"""
         archive_dir = Path(self.archive_dir_input.text())
@@ -2676,6 +2709,7 @@ class UnifiedParserApp(QMainWindow):
         # Создаем QTextEdit для отображения текста инструкции с прокруткой
         help_text = QTextEdit()
         help_text.setReadOnly(True)
+        help_text.setStyleSheet("font-size: 14px;")  # Увеличенный шрифт для инструкции
         help_text.setHtml("""
         <h2 style="color: #0066cc;">Инструкция по работе с Универсальным парсером ЕИС</h2>
         
