@@ -778,7 +778,6 @@ class UnifiedParserApp(QMainWindow):
                 border-bottom: 1px solid #ffffff;
                 padding: 8px 16px;
             }
-            QTabBar::tab:hover:!selected { background-color: #f5f5f5; }
             QTableWidget { 
                 font-size: 11px; 
                 border: 1px solid #999999; 
@@ -792,7 +791,6 @@ class UnifiedParserApp(QMainWindow):
                 color: #000000; 
                 padding: 6px; 
                 border: 1px solid #999999;
-                font-weight: bold;
                 font-size: 11px;
             }
             QHeaderView::section:hover { background-color: #e0e0e0; }
@@ -806,7 +804,6 @@ class UnifiedParserApp(QMainWindow):
                 border-top: 1px solid #999999;
             }
             QGroupBox { 
-                font-weight: bold; 
                 border: 1px solid #999999; 
                 margin-top: 10px;
                 padding-top: 10px;
@@ -1095,7 +1092,6 @@ class UnifiedParserApp(QMainWindow):
                 background-color: #ffffff; 
                 color: #000000;
                 border-bottom: 1px solid #ffffff;
-                font-weight: bold;
                 padding: 8px 16px;
             }
         """)
@@ -1759,7 +1755,8 @@ class UnifiedParserApp(QMainWindow):
                         item = QTableWidgetItem(value)
                         self.results_table.setItem(row_position, col_idx, item)
             
-            self.results_table.resizeColumnsToContents()
+            # Не меняем ширину колонок - оставляем фиксированную ширину 150px как при парсинге
+            # self.results_table.resizeColumnsToContents()  # Убрано для сохранения фиксированной ширины
             
             QMessageBox.information(self, "Успех", f"Загружено {len(data_rows)} строк из {file_path}")
             self.append_log(f"Импорт из Excel: {file_path}, строк: {len(data_rows)}")
@@ -4042,7 +4039,8 @@ class UnifiedParserApp(QMainWindow):
         <p><b>3.1.</b> Таблица результатов содержит все найденные позиции. Двойной клик по ссылке в колонке 
         "Контракт (ссылка)" откроет её в браузере.</p>
         <p><b>3.2.</b> Используйте фильтры для отбора нужных позиций по МНН, форме выпуска и дозировке.</p>
-        <p><b>3.3.</b> Для выгрузки данных нажмите "Выгрузить в Excel" или "Выгрузить в CSV".</p>
+        <p><b>3.3.</b> Для выгрузки данных нажмите "Скачать".</p>
+        <p><b>3.4.</b> Для загрузки ранее выгруженного файла Excel нажмите "Загрузить" — данные будут импортированы в итоговую таблицу с сохранением форматирования.</p>
         
         <h3>4. Расчет НМЦК</h3>
         <p>Вкладка "НМЦК" предназначена для расчета начальной максимальной цены контракта.</p>
