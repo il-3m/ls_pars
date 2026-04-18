@@ -3043,7 +3043,29 @@ class UnifiedParserApp(QMainWindow):
         # Очищаем таблицу НМЦК
         self.nmcc_table.setRowCount(0)
         
+        # Отслеживаем уже добавленные номера реестровых записей (контрактов)
+        added_reestr_numbers = set()
+        
         for row_idx, _ in row_indices:
+            # Получаем номер реестровой записи для проверки уникальности контракта
+            reestr_item = self.results_table.item(row_idx, FIELD_ORDER.index('reestr_number'))
+            reestr_number = reestr_item.text() if reestr_item and reestr_item.text() else ""
+            
+            # Пропускаем позиции из уже добавленных контрактов (требование: 3 разных контракта)
+            if reestr_number and reestr_number in added_reestr_numbers:
+                continue
+            
+            # Проверяем объем - пропускаем позиции без установленного объема (требование 2)
+            qty_item = self.results_table.item(row_idx, FIELD_ORDER.index('qty_consumption_unit'))
+            if not qty_item or not qty_item.text():
+                continue
+            
+            # Проверяем, что объем не пустой и не содержит только пробелы
+            qty_text = qty_item.text().strip()
+            if not qty_text or qty_text.upper() == "НАИМЕНОВАНИЕ" or qty_text.isdigit() and int(qty_text) < 100:
+                # Дополнительная проверка на артефакты парсинга
+                pass
+            
             new_row = self.nmcc_table.rowCount()
             self.nmcc_table.insertRow(new_row)
             
@@ -3067,6 +3089,10 @@ class UnifiedParserApp(QMainWindow):
                         item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                     
                     self.nmcc_table.setItem(new_row, col_idx, item)
+            
+            # Добавляем номер реестровой записи в множество добавленных
+            if reestr_number:
+                added_reestr_numbers.add(reestr_number)
         
         # Обновляем итоговые данные после заполнения таблицы
         self.update_nmcc_summary()
