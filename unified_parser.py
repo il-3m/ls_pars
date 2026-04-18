@@ -64,7 +64,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QWidget,
     QLabel, QLineEdit, QPushButton, QCheckBox,
     QDateEdit, QMessageBox, QProgressBar,
-    QHBoxLayout, QTextEdit, QFileDialog, QDialog,
+    QHBoxLayout, QTextEdit, QFileDialog, QDialog, QInputDialog,
     QGridLayout, QSpacerItem, QSizePolicy,
     QComboBox, QCompleter, QFormLayout, QStatusBar,
     QListWidget, QListWidgetItem, QSplitter, QTableWidget, QTableWidgetItem,
@@ -776,7 +776,6 @@ class UnifiedParserApp(QMainWindow):
                 background-color: #ffffff; 
                 color: #000000;
                 border-bottom: 1px solid #ffffff;
-                font-weight: bold;
                 padding: 8px 16px;
             }
             QTabBar::tab:hover:!selected { background-color: #f5f5f5; }
@@ -966,8 +965,9 @@ class UnifiedParserApp(QMainWindow):
         settings_tab_layout.setSpacing(8)
         settings_tab_layout.setContentsMargins(4, 8, 4, 4)
 
-        # Таймауты и задержки
-        timing_group = QGroupBox("Таймауты и задержки")
+        # Таймауты и задержки (скрыты по умолчанию, открываются по коду 1922)
+        self.timing_group = QGroupBox("Таймауты и задержки")
+        self.timing_group.setVisible(False)  # Скрыто по умолчанию
         timing_layout = QFormLayout()
         timing_layout.setSpacing(6)
         
@@ -985,8 +985,13 @@ class UnifiedParserApp(QMainWindow):
         timing_layout.addRow("Задержка загрузки (мс):", self.page_load_delay_input)
         timing_layout.addRow("Задержка раскрытия (мс):", self.expand_delay_input)
         
-        timing_group.setLayout(timing_layout)
-        settings_tab_layout.addWidget(timing_group)
+        self.timing_group.setLayout(timing_layout)
+        settings_tab_layout.addWidget(self.timing_group)
+        
+        # Кнопка для ввода кода доступа к скрытым настройкам
+        code_button = QPushButton("🔒 Настройки парсинга")
+        code_button.clicked.connect(self.enter_secret_code)
+        settings_tab_layout.addWidget(code_button)
 
         # Настройки диапазона сопоставимости для НМЦК
         nmcc_range_group = QGroupBox()
@@ -1041,19 +1046,21 @@ class UnifiedParserApp(QMainWindow):
         actions_layout.addWidget(self.reset_button)
         left_layout.addLayout(actions_layout)
 
-        # Кнопка "Скачать" (переименована из "ВЫГРУЗИТЬ В EXCEL", уменьшена вдвое по ширине, размещена под кнопками)
+        # Кнопки "Скачать" и "Загрузить" - аналогичного размера, в одну линию под "Статистикой" и "Сбросом"
+        export_import_layout = QHBoxLayout()
+        export_import_layout.setSpacing(6)
+        
         self.export_excel_button = QPushButton('Скачать')
         self.export_excel_button.setMinimumHeight(35)
-        self.export_excel_button.setMaximumWidth(100)  # Уменьшена вдвое по ширине
         self.export_excel_button.clicked.connect(self.export_to_excel)
-        left_layout.addWidget(self.export_excel_button)
-
-        # Кнопка "Загрузить" - загрузка ранее скачанного файла с переводом в итоговую таблицу
+        
         self.import_button = QPushButton('Загрузить')
         self.import_button.setMinimumHeight(35)
-        self.import_button.setMaximumWidth(100)
         self.import_button.clicked.connect(self.import_from_excel)
-        left_layout.addWidget(self.import_button)
+        
+        export_import_layout.addWidget(self.export_excel_button)
+        export_import_layout.addWidget(self.import_button)
+        left_layout.addLayout(export_import_layout)
 
         left_layout.addStretch()
         left_panel.setLayout(left_layout)
@@ -1634,6 +1641,23 @@ class UnifiedParserApp(QMainWindow):
             self.status_label.setText("Данные сброшены")
             self.append_log("=== ДАННЫЕ СБРОШЕНЫ ПОЛЬЗОВАТЕЛЕМ ===")
 
+    def enter_secret_code(self):
+        """Ввод секретного кода для отображения скрытых настроек парсинга"""
+        code, ok = QInputDialog.getText(
+            self,
+            "Ввод кода доступа",
+            "Введите код доступа к настройкам парсинга:",
+            QLineEdit.Password
+        )
+        
+        if ok and code == "1922":
+            self.timing_group.setVisible(True)
+            QMessageBox.information(self, "Доступ разрешен", "Настройки парсинга разблокированы")
+            self.append_log("Настройки парсинга разблокированы по коду 1922")
+        elif ok:
+            QMessageBox.warning(self, "Ошибка", "Неверный код доступа")
+            self.append_log("Попытка ввода неверного кода доступа")
+
     def export_to_excel(self):
         """Выгрузка видимых данных таблицы в Excel"""
         if self.results_table.rowCount() == 0:
@@ -1696,6 +1720,17 @@ class UnifiedParserApp(QMainWindow):
             wb = load_workbook(file_path, data_only=True)
             ws = wb.active
             
+            # Очищаем текущую таблицу
+            self.results_table.setRowCount(0)
+            
+            # Устанавливаем заголовки и форматирование как при парсинге
+            self.results_table.setColumnCount(len(FIELD_ORDER))
+            self.results_table.setHorizontalHeaderLabels([EXPORT_HEADERS_RU[FIELD_ORDER[i]] for i in range(len(FIELD_ORDER))])
+            
+            # Настраиваем ширину колонок как при парсинге
+            for i in range(len(FIELD_ORDER)):
+                self.results_table.setColumnWidth(i, 150)
+            
             # Пропускаем заголовок (первая строка)
             header_row = None
             data_rows = []
@@ -1714,13 +1749,6 @@ class UnifiedParserApp(QMainWindow):
             if not header_row or not data_rows:
                 QMessageBox.warning(self, "Внимание", "Файл не содержит данных или заголовков")
                 return
-            
-            # Очищаем текущую таблицу
-            self.results_table.setRowCount(0)
-            
-            # Устанавливаем заголовки
-            self.results_table.setColumnCount(len(header_row))
-            self.results_table.setHorizontalHeaderLabels(header_row)
             
             # Заполняем данными
             for row_data in data_rows:
@@ -4044,14 +4072,12 @@ class UnifiedParserApp(QMainWindow):
         <p><b>5.2.</b> Поля ввода данных синхронизированы между вкладками "НМЦК" и "НМЦК ручной подбор".</p>
         
         <h3>6. Настройки</h3>
-        <p>Во вкладке "Настройки" можно изменить параметры парсинга:</p>
+        <p>Во вкладке "Настройки" можно изменить параметры:</p>
         <ul>
-            <li>Максимум контрактов — целевое количество контрактов для сбора</li>
-            <li>Таймаут ожидания (мс) — время ожидания загрузки страниц</li>
-            <li>Раунды раскрытия — количество раундов раскрытия списков</li>
-            <li>Задержка загрузки страницы (мс)</li>
-            <li>Задержка раскрытия (мс)</li>
+            <li><b>Диапазон сопоставимости для НМЦК</b> — максимальное отклонение по объему в разах</li>
         </ul>
+        <p><b>Скрытые настройки парсинга:</b></p>
+        <p>Для доступа к расширенным настройкам парсинга (таймауты, задержки, раунды раскрытия) нажмите кнопку "🔒 Настройки парсинга" и введите код доступа <code>1922</code>.</p>
         
         <h3>7. Сброс данных</h3>
         <p>Кнопка "Сброс" очищает:</p>
