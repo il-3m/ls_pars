@@ -1202,11 +1202,15 @@ class UnifiedParserApp(QMainWindow):
         self.nmcc_volume_btn.setToolTip("Найти 3 позиции с количеством, наиболее близким к указанному объему")
         buttons_layout.addWidget(self.nmcc_volume_btn)
         
-        self.nmcc_avg_btn = QPushButton("НМЦК приближенный к КП")
+        self.nmcc_min_btn = QPushButton("НМЦК минимальная")
+        self.nmcc_min_btn.setToolTip("Найти 3 позиции с наименьшей ценой")
+        buttons_layout.addWidget(self.nmcc_min_btn)
+        
+        self.nmcc_avg_btn = QPushButton("НМЦК приближенная к КП")
         self.nmcc_avg_btn.setToolTip("Найти 3 позиции со средней ценой, наиболее близкой к средней по введенным КП")
         buttons_layout.addWidget(self.nmcc_avg_btn)
         
-        self.nmcc_optimal_btn = QPushButton("НМЦК Оптимальный")
+        self.nmcc_optimal_btn = QPushButton("НМЦК оптимальная")
         self.nmcc_optimal_btn.setToolTip(
             "Оптимальный алгоритм:\n"
             "1. В приоритете 'вписаться в цену' (средняя цена ЕИС >= средней цены КП)\n"
@@ -1388,6 +1392,7 @@ class UnifiedParserApp(QMainWindow):
         
         # Подключаем кнопки расчета
         self.nmcc_volume_btn.clicked.connect(self.calculate_nmcc_by_volume)
+        self.nmcc_min_btn.clicked.connect(self.calculate_nmcc_by_min_price)
         self.nmcc_avg_btn.clicked.connect(self.calculate_nmcc_by_avg_price)
         self.nmcc_optimal_btn.clicked.connect(self.calculate_nmcc_optimal)
         
@@ -1606,6 +1611,7 @@ class UnifiedParserApp(QMainWindow):
             
             # Сбрасываем индикацию кнопок НМЦК
             self.nmcc_volume_btn.setStyleSheet("")
+            self.nmcc_min_btn.setStyleSheet("")
             self.nmcc_avg_btn.setStyleSheet("")
             self.nmcc_optimal_btn.setStyleSheet("")
             
@@ -2175,6 +2181,7 @@ class UnifiedParserApp(QMainWindow):
             # Окрашиваем периметр кнопки в зеленый цвет
             self.nmcc_volume_btn.setStyleSheet("border: 3px solid green;")
             # Сбрасываем стиль у других кнопок
+            self.nmcc_min_btn.setStyleSheet("")
             self.nmcc_avg_btn.setStyleSheet("")
             self.nmcc_optimal_btn.setStyleSheet("")
             
@@ -2241,6 +2248,7 @@ class UnifiedParserApp(QMainWindow):
             self.nmcc_avg_btn.setStyleSheet("border: 3px solid green;")
             # Сбрасываем стиль у других кнопок
             self.nmcc_volume_btn.setStyleSheet("")
+            self.nmcc_min_btn.setStyleSheet("")
             self.nmcc_optimal_btn.setStyleSheet("")
             
             # Переключаемся на вкладку НМЦК
@@ -2251,6 +2259,54 @@ class UnifiedParserApp(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка при расчете НМЦК по средней цене: {e}")
             logging.error(f"Ошибка calculate_nmcc_by_avg_price: {e}", exc_info=True)
+    
+    def calculate_nmcc_by_min_price(self):
+        """Расчет НМЦК по минимальной цене: найти 3 позиции с наименьшей ценой"""
+        try:
+            # Находим индекс колонки price_per_unit
+            price_col_index = FIELD_ORDER.index('price_per_unit')
+            
+            # Собираем все видимые строки из итоговой таблицы
+            rows_with_price = []
+            for row in range(self.results_table.rowCount()):
+                if not self.results_table.isRowHidden(row):
+                    item = self.results_table.item(row, price_col_index)
+                    if item and item.text():
+                        try:
+                            price = float(item.text().replace(',', '.'))
+                            rows_with_price.append((row, price))
+                        except ValueError:
+                            continue
+            
+            if len(rows_with_price) < 3:
+                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено позиций: {len(rows_with_price)}, требуется минимум 3")
+                return
+            
+            # Сортируем по возрастанию цены
+            rows_with_price.sort(key=lambda x: x[1])
+            
+            # Берем 3 позиции с наименьшей ценой
+            top_3_rows = rows_with_price[:3]
+            
+            # Заполняем таблицу НМЦК
+            self.fill_nmcc_table(top_3_rows)
+            
+            # Окрашиваем периметр кнопки в зеленый цвет
+            self.nmcc_min_btn.setStyleSheet("border: 3px solid green;")
+            # Сбрасываем стиль у других кнопок
+            self.nmcc_volume_btn.setStyleSheet("")
+            self.nmcc_avg_btn.setStyleSheet("")
+            self.nmcc_optimal_btn.setStyleSheet("")
+            
+            # Переключаемся на вкладку НМЦК
+            self.tables_tab_widget.setCurrentIndex(1)
+            
+            selected_prices = [f"{row[1]:.2f}₽" for row in top_3_rows]
+            self.append_log(f"НМЦК минимальная: выбрано 3 позиции с наименьшей ценой: {', '.join(selected_prices)}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при расчете НМЦК по минимальной цене: {e}")
+            logging.error(f"Ошибка calculate_nmcc_by_min_price: {e}", exc_info=True)
     
     def calculate_nmcc_optimal(self):
         """Оптимальный алгоритм расчета НМЦК:
@@ -2359,6 +2415,7 @@ class UnifiedParserApp(QMainWindow):
             self.nmcc_optimal_btn.setStyleSheet("border: 3px solid green;")
             # Сбрасываем стиль у других кнопок
             self.nmcc_volume_btn.setStyleSheet("")
+            self.nmcc_min_btn.setStyleSheet("")
             self.nmcc_avg_btn.setStyleSheet("")
             
             # Переключаемся на вкладку НМЦК
@@ -2697,9 +2754,18 @@ class UnifiedParserApp(QMainWindow):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
         
-        # Заголовок
-        title_label = QLabel("<h2 style='color: #0066cc;'>Аналитика по цене</h2>")
-        layout.addWidget(title_label)
+        # Заголовок и ссылка на алгоритм в одной строке
+        header_layout = QHBoxLayout()
+        title_label = QLabel("<h2>Аналитика по цене</h2>")
+        header_layout.addWidget(title_label)
+        
+        # Гиперссылка на алгоритм расчета (вверху справа)
+        algorithm_link = QLabel("<a href='#' style='font-size: 11px; color: #0066cc;'>Алгоритм расчета</a>")
+        algorithm_link.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        algorithm_link.linkActivated.connect(lambda: self.show_algorithm_dialog())
+        header_layout.addWidget(algorithm_link)
+        
+        layout.addLayout(header_layout)
         
         # Получаем все данные из таблицы результатов
         all_prices = []
@@ -2751,7 +2817,7 @@ class UnifiedParserApp(QMainWindow):
         if all_prices:
             avg_price = sum(all_prices) / len(all_prices)
             avg_price_label = QLabel(f"<b>1. Средняя цена по всем позициям:</b> {avg_price:.2f} ₽")
-            avg_price_label.setStyleSheet("font-size: 14px; padding: 10px; background-color: #E3F2FD; border-radius: 5px;")
+            avg_price_label.setStyleSheet("font-size: 14px; padding: 10px; border: 1px solid #cccccc;")
             scroll_layout.addWidget(avg_price_label)
         else:
             no_data_label = QLabel("<i>Нет данных о цене для расчета</i>")
@@ -2762,10 +2828,34 @@ class UnifiedParserApp(QMainWindow):
         if all_volumes:
             avg_volume = sum(all_volumes) / len(all_volumes)
             avg_volume_label = QLabel(f"<b>2. Средний объем по всем позициям:</b> {avg_volume:.2f} ед.")
-            avg_volume_label.setStyleSheet("font-size: 14px; padding: 10px; background-color: #E8F5E9; border-radius: 5px;")
+            avg_volume_label.setStyleSheet("font-size: 14px; padding: 10px; border: 1px solid #cccccc;")
             scroll_layout.addWidget(avg_volume_label)
         
-        # 3. Реалистичная цена (отбрасываем выбросы)
+        # 3. Минимальная и максимальная цена
+        if all_prices and all_volumes:
+            # Находим минимальную цену и соответствующий объем
+            min_price = min(all_prices)
+            min_price_idx = all_prices.index(min_price)
+            min_volume = all_volumes[min_price_idx] if min_price_idx < len(all_volumes) else 0
+            
+            # Находим максимальную цену и соответствующий объем
+            max_price = max(all_prices)
+            max_price_idx = all_prices.index(max_price)
+            max_volume = all_volumes[max_price_idx] if max_price_idx < len(all_volumes) else 0
+            
+            min_max_layout = QHBoxLayout()
+            
+            min_price_label = QLabel(f"<b>Минимальная цена:</b> {min_price:.2f} ₽ (объем: {min_volume:.2f} ед.)")
+            min_price_label.setStyleSheet("font-size: 14px; padding: 10px; border: 1px solid #cccccc;")
+            min_max_layout.addWidget(min_price_label)
+            
+            max_price_label = QLabel(f"<b>Максимальная цена:</b> {max_price:.2f} ₽ (объем: {max_volume:.2f} ед.)")
+            max_price_label.setStyleSheet("font-size: 14px; padding: 10px; border: 1px solid #cccccc;")
+            min_max_layout.addWidget(max_price_label)
+            
+            scroll_layout.addLayout(min_max_layout)
+        
+        # 4. Реалистичная цена (отбрасываем выбросы)
         if all_prices:
             realistic_price_info = self.calculate_realistic_price(all_prices)
             realistic_label = QLabel(
@@ -2775,10 +2865,10 @@ class UnifiedParserApp(QMainWindow):
                 f"осталось {realistic_price_info['filtered_count']} позиций для расчета)"
                 f"</span>"
             )
-            realistic_label.setStyleSheet("font-size: 14px; padding: 10px; background-color: #FFF3E0; border-radius: 5px;")
+            realistic_label.setStyleSheet("font-size: 14px; padding: 10px; border: 1px solid #cccccc;")
             scroll_layout.addWidget(realistic_label)
         
-        # 4. Зависимость цены от объема (если есть данные)
+        # 5. Зависимость цены от объема (если есть данные)
         if price_volume_pairs and len(price_volume_pairs) >= 3:
             volume_price_table = self.analyze_volume_price_dependency(price_volume_pairs)
             if volume_price_table:
@@ -2791,7 +2881,6 @@ class UnifiedParserApp(QMainWindow):
                 table_widget.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
                 table_widget.verticalHeader().setVisible(False)
                 table_widget.setAlternatingRowColors(True)
-                table_widget.setMaximumHeight(200)
                 
                 for i, row_data in enumerate(volume_price_table):
                     table_widget.insertRow(i)
@@ -2803,38 +2892,6 @@ class UnifiedParserApp(QMainWindow):
                 dependency_group.setLayout(dependency_layout)
                 scroll_layout.addWidget(dependency_group)
         
-        # Алгоритм расчета
-        algorithm_group = QGroupBox("Алгоритм расчета показателей")
-        algorithm_layout = QVBoxLayout()
-        algorithm_text = QTextEdit()
-        algorithm_text.setReadOnly(True)
-        algorithm_text.setMaximumHeight(200)
-        algorithm_text.setHtml("""
-        <div style='font-size: 12px; line-height: 1.5;'>
-        <p><b>1. Средняя цена:</b> Простое среднее арифметическое всех цен: Σ(цена) / N</p>
-        
-        <p><b>2. Средний объем:</b> Простое среднее арифметическое всех объемов: Σ(объем) / N</p>
-        
-        <p><b>3. Реалистичная цена:</b></p>
-        <ul>
-        <li>Вычисляем среднее арифметическое (μ) и стандартное отклонение (σ) всех цен</li>
-        <li>Отбрасываем выбросы: позиции, где цена выходит за пределы [μ - 2σ; μ + 2σ]</li>
-        <li>Пересчитываем среднее по оставшимся позициям</li>
-        <li>Этот метод (правило 2-х сигм) позволяет исключить аномально высокие и низкие цены</li>
-        </ul>
-        
-        <p><b>4. Зависимость цены от объема:</b></p>
-        <ul>
-        <li>Все позиции группируются по диапазонам объема (квантили: 0-25%, 25-50%, 50-75%, 75-100%)</li>
-        <li>Для каждого диапазона рассчитывается средняя цена</li>
-        <li>Это позволяет выявить закономерности оптового ценообразования</li>
-        </ul>
-        </div>
-        """)
-        algorithm_layout.addWidget(algorithm_text)
-        algorithm_group.setLayout(algorithm_layout)
-        scroll_layout.addWidget(algorithm_group)
-        
         # Пустое пространство внизу
         scroll_layout.addStretch()
         
@@ -2843,6 +2900,56 @@ class UnifiedParserApp(QMainWindow):
         layout.addWidget(scroll_area)
         
         # Кнопка закрытия
+        close_btn = QPushButton("Закрыть")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        
+        dialog.setLayout(layout)
+        dialog.exec_()
+    
+    def show_algorithm_dialog(self):
+        """Открытие модального окна с описанием алгоритма расчета"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Алгоритм расчета")
+        dialog.setMinimumSize(600, 500)
+        
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        title_label = QLabel("<h3>Алгоритм расчета показателей</h3>")
+        layout.addWidget(title_label)
+        
+        algorithm_text = QTextEdit()
+        algorithm_text.setReadOnly(True)
+        algorithm_text.setHtml("""
+        <div style='font-size: 13px; line-height: 1.6;'>
+        <p><b>1. Средняя цена:</b> Простое среднее арифметическое всех цен: Σ(цена) / N</p>
+        
+        <p><b>2. Средний объем:</b> Простое среднее арифметическое всех объемов: Σ(объем) / N</p>
+        
+        <p><b>3. Минимальная цена:</b> Наименьшая цена среди всех позиций с указанием соответствующего объема</p>
+        
+        <p><b>4. Максимальная цена:</b> Наибольшая цена среди всех позиций с указанием соответствующего объема</p>
+        
+        <p><b>5. Реалистичная цена:</b></p>
+        <ul>
+        <li>Вычисляем среднее арифметическое (μ) и стандартное отклонение (σ) всех цен</li>
+        <li>Отбрасываем выбросы: позиции, где цена выходит за пределы [μ - 2σ; μ + 2σ]</li>
+        <li>Пересчитываем среднее по оставшимся позициям</li>
+        <li>Этот метод (правило 2-х сигм) позволяет исключить аномально высокие и низкие цены</li>
+        </ul>
+        
+        <p><b>6. Зависимость цены от объема:</b></p>
+        <ul>
+        <li>Все позиции группируются по диапазонам объема (квантили: 0-25%, 25-50%, 50-75%, 75-100%)</li>
+        <li>Для каждого диапазона рассчитывается средняя цена</li>
+        <li>Это позволяет выявить закономерности оптового ценообразования</li>
+        </ul>
+        </div>
+        """)
+        layout.addWidget(algorithm_text)
+        
         close_btn = QPushButton("Закрыть")
         close_btn.clicked.connect(dialog.accept)
         layout.addWidget(close_btn)
