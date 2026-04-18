@@ -1315,6 +1315,19 @@ class UnifiedParserApp(QMainWindow):
         manual_nmcc_table_layout.setSpacing(0)
         manual_nmcc_table_layout.setContentsMargins(0, 0, 0, 0)
         
+        # Панель с кнопкой удаления позиции
+        manual_table_buttons_layout = QHBoxLayout()
+        manual_table_buttons_layout.setSpacing(6)
+        
+        self.delete_manual_nmcc_row_btn = QPushButton("Удалить позицию")
+        self.delete_manual_nmcc_row_btn.setStyleSheet("background-color: #ffcccc;")
+        self.delete_manual_nmcc_row_btn.setToolTip("Удалить выделенную строку из таблицы")
+        self.delete_manual_nmcc_row_btn.clicked.connect(self.delete_manual_nmcc_row)
+        manual_table_buttons_layout.addWidget(self.delete_manual_nmcc_row_btn)
+        manual_table_buttons_layout.addStretch()
+        
+        manual_nmcc_table_layout.addLayout(manual_table_buttons_layout)
+        
         self.manual_nmcc_table = QTableWidget()
         self.manual_nmcc_table.setColumnCount(len(FIELD_ORDER))
         self.manual_nmcc_table.setHorizontalHeaderLabels([EXPORT_HEADERS_RU[FIELD_ORDER[i]] for i in range(len(FIELD_ORDER))])
@@ -1324,6 +1337,7 @@ class UnifiedParserApp(QMainWindow):
         self.manual_nmcc_table.setAlternatingRowColors(True)
         self.manual_nmcc_table.setMinimumHeight(300)
         self.manual_nmcc_table.cellDoubleClicked.connect(self.open_manual_nmcc_table_link)
+        self.manual_nmcc_table.setSelectionBehavior(QTableWidget.SelectRows)
         
         # Устанавливаем начальные ширины колонок
         for i in range(len(FIELD_ORDER)):
@@ -1482,7 +1496,8 @@ class UnifiedParserApp(QMainWindow):
             dose_text = dose_item.text().lower() if dose_item else ""
             
             # Проверяем все три фильтра (если фильтр пустой - игнорируем)
-            mnn_match = not filter_mnn or filter_mnn in mnn_text
+            # Для МНН требуется ТОЧНОЕ совпадение, для формы и дозировки - частичное
+            mnn_match = not filter_mnn or mnn_text == filter_mnn
             form_match = not filter_form or filter_form in form_text
             dose_match = not filter_dose or filter_dose in dose_text
             
@@ -1517,7 +1532,8 @@ class UnifiedParserApp(QMainWindow):
             item = self.results_table.item(row, mnn_column_index)
             cell_text = item.text().lower() if item else ""
             
-            if not filter_text or filter_text in cell_text:
+            # Требуется ТОЧНОЕ совпадение для МНН
+            if not filter_text or filter_text == cell_text:
                 self.results_table.setRowHidden(row, False)
             else:
                 self.results_table.setRowHidden(row, True)
@@ -1570,6 +1586,12 @@ class UnifiedParserApp(QMainWindow):
             self.nmcc_volume_btn.setStyleSheet("")
             self.nmcc_avg_btn.setStyleSheet("")
             self.nmcc_optimal_btn.setStyleSheet("")
+            
+            # Сбрасываем итоговые данные вкладки "НМЦК ручной подбор"
+            self.manual_nmcc_avg_kp_label.setText("0.00")
+            self.manual_nmcc_avg_eis_label.setText("0.00")
+            self.manual_nmcc_price_delta_label.setText("0.00 (0.00%)")
+            self.manual_nmcc_max_deviation_label.setText("0.00 (0.00%)")
             
             # Сбрасываем поля "Поисковый запрос" и фильтры
             self.search_input.setCurrentText("")
@@ -1736,9 +1758,9 @@ class UnifiedParserApp(QMainWindow):
         if self.filter_before_search:
             # filter_before_search может быть строкой (старый формат) или словарем (новый формат)
             if isinstance(self.filter_before_search, str):
-                # Старый формат - только МНН
+                # Старый формат - только МНН (требуется ТОЧНОЕ совпадение)
                 mnn_value = row_data.get('mnn', '').lower()
-                if self.filter_before_search.lower() not in mnn_value:
+                if self.filter_before_search.lower() != mnn_value:
                     return
             elif isinstance(self.filter_before_search, dict):
                 # Новый формат - словарь с фильтрами по МНН, форме и дозировке
@@ -1751,7 +1773,8 @@ class UnifiedParserApp(QMainWindow):
                 filter_dose = self.filter_before_search.get('dose', '').lower()
                 
                 # Проверяем все три фильтра (если фильтр пустой - игнорируем)
-                mnn_match = not filter_mnn or filter_mnn in mnn_value
+                # Для МНН требуется ТОЧНОЕ совпадение, для формы и дозировки - частичное
+                mnn_match = not filter_mnn or mnn_value == filter_mnn
                 form_match = not filter_form or filter_form in form_value
                 dose_match = not filter_dose or filter_dose in dose_value
                 
@@ -2035,6 +2058,41 @@ class UnifiedParserApp(QMainWindow):
             self.tables_tab_widget.setCurrentIndex(tab_index)
         
         self.append_log(f"Позиция добавлена в НМЦК ручной подбор: {row_data.get('name', 'Без названия')}")
+        
+        # Пересчитываем итоговые данные после добавления позиции
+        self.update_manual_nmcc_summary()
+    
+    def delete_manual_nmcc_row(self):
+        """Удаление выделенной строки из таблицы НМЦК ручной подбор с подтверждением"""
+        selected_rows = self.manual_nmcc_table.selectedItems()
+        
+        if not selected_rows:
+            QMessageBox.warning(self, "Внимание", "Пожалуйста, выберите строку для удаления.")
+            return
+        
+        # Получаем номер первой выделенной строки
+        row = selected_rows[0].row()
+        
+        # Получаем название позиции для отображения в диалоге
+        name_col_index = FIELD_ORDER.index('name')
+        name_item = self.manual_nmcc_table.item(row, name_col_index)
+        position_name = name_item.text() if name_item else "Без названия"
+        
+        # Модальное окно подтверждения
+        reply = QMessageBox.question(
+            self,
+            "Подтверждение удаления",
+            f"Вы точно хотите удалить позицию \"{position_name}\"?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            self.manual_nmcc_table.removeRow(row)
+            self.append_log(f"Позиция удалена из НМЦК ручной подбор: {position_name}")
+            
+            # Пересчитываем итоговые данные после удаления позиции
+            self.update_manual_nmcc_summary()
     
     def calculate_nmcc_by_volume(self):
         """Расчет НМЦК по объему: найти 3 позиции с количеством, наиболее близким к указанному объему
