@@ -1608,8 +1608,8 @@ class UnifiedParserApp(QMainWindow):
             self.nmcc_volume_input.clear()
             
             # Сбрасываем итоговые данные
-            self.nmcc_avg_kp_label.setText("0.00")
-            self.nmcc_avg_eis_label.setText("0.00")
+            self.nmcc_min_kp_label.setText("0.00")
+            self.nmcc_min_eis_label.setText("0.00")
             self.nmcc_price_delta_label.setText("0.00 (0.00%)")
             self.nmcc_max_deviation_label.setText("0.00 (0.00%)")
             
@@ -1621,8 +1621,8 @@ class UnifiedParserApp(QMainWindow):
             self.nmcc_ideal_btn.setStyleSheet("")
             
             # Сбрасываем итоговые данные вкладки "НМЦК ручной подбор"
-            self.manual_nmcc_avg_kp_label.setText("0.00")
-            self.manual_nmcc_avg_eis_label.setText("0.00")
+            self.manual_nmcc_min_kp_label.setText("0.00")
+            self.manual_nmcc_min_eis_label.setText("0.00")
             self.manual_nmcc_price_delta_label.setText("0.00 (0.00%)")
             self.manual_nmcc_max_deviation_label.setText("0.00 (0.00%)")
             
