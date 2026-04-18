@@ -1496,7 +1496,8 @@ class UnifiedParserApp(QMainWindow):
             dose_text = dose_item.text().lower() if dose_item else ""
             
             # Проверяем все три фильтра (если фильтр пустой - игнорируем)
-            mnn_match = not filter_mnn or filter_mnn in mnn_text
+            # Для МНН требуется ТОЧНОЕ совпадение, для формы и дозировки - частичное
+            mnn_match = not filter_mnn or mnn_text == filter_mnn
             form_match = not filter_form or filter_form in form_text
             dose_match = not filter_dose or filter_dose in dose_text
             
@@ -1531,7 +1532,8 @@ class UnifiedParserApp(QMainWindow):
             item = self.results_table.item(row, mnn_column_index)
             cell_text = item.text().lower() if item else ""
             
-            if not filter_text or filter_text in cell_text:
+            # Требуется ТОЧНОЕ совпадение для МНН
+            if not filter_text or filter_text == cell_text:
                 self.results_table.setRowHidden(row, False)
             else:
                 self.results_table.setRowHidden(row, True)
@@ -1756,9 +1758,9 @@ class UnifiedParserApp(QMainWindow):
         if self.filter_before_search:
             # filter_before_search может быть строкой (старый формат) или словарем (новый формат)
             if isinstance(self.filter_before_search, str):
-                # Старый формат - только МНН
+                # Старый формат - только МНН (требуется ТОЧНОЕ совпадение)
                 mnn_value = row_data.get('mnn', '').lower()
-                if self.filter_before_search.lower() not in mnn_value:
+                if self.filter_before_search.lower() != mnn_value:
                     return
             elif isinstance(self.filter_before_search, dict):
                 # Новый формат - словарь с фильтрами по МНН, форме и дозировке
@@ -1771,7 +1773,8 @@ class UnifiedParserApp(QMainWindow):
                 filter_dose = self.filter_before_search.get('dose', '').lower()
                 
                 # Проверяем все три фильтра (если фильтр пустой - игнорируем)
-                mnn_match = not filter_mnn or filter_mnn in mnn_value
+                # Для МНН требуется ТОЧНОЕ совпадение, для формы и дозировки - частичное
+                mnn_match = not filter_mnn or mnn_value == filter_mnn
                 form_match = not filter_form or filter_form in form_value
                 dose_match = not filter_dose or filter_dose in dose_value
                 
