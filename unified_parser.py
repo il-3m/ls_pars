@@ -64,7 +64,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QWidget,
     QLabel, QLineEdit, QPushButton, QCheckBox,
     QDateEdit, QMessageBox, QProgressBar,
-    QHBoxLayout, QTextEdit, QFileDialog, QDialog,
+    QHBoxLayout, QTextEdit, QFileDialog, QDialog, QInputDialog,
     QGridLayout, QSpacerItem, QSizePolicy,
     QComboBox, QCompleter, QFormLayout, QStatusBar,
     QListWidget, QListWidgetItem, QSplitter, QTableWidget, QTableWidgetItem,
@@ -776,10 +776,8 @@ class UnifiedParserApp(QMainWindow):
                 background-color: #ffffff; 
                 color: #000000;
                 border-bottom: 1px solid #ffffff;
-                font-weight: bold;
                 padding: 8px 16px;
             }
-            QTabBar::tab:hover:!selected { background-color: #f5f5f5; }
             QTableWidget { 
                 font-size: 11px; 
                 border: 1px solid #999999; 
@@ -793,7 +791,6 @@ class UnifiedParserApp(QMainWindow):
                 color: #000000; 
                 padding: 6px; 
                 border: 1px solid #999999;
-                font-weight: bold;
                 font-size: 11px;
             }
             QHeaderView::section:hover { background-color: #e0e0e0; }
@@ -807,7 +804,6 @@ class UnifiedParserApp(QMainWindow):
                 border-top: 1px solid #999999;
             }
             QGroupBox { 
-                font-weight: bold; 
                 border: 1px solid #999999; 
                 margin-top: 10px;
                 padding-top: 10px;
@@ -966,8 +962,9 @@ class UnifiedParserApp(QMainWindow):
         settings_tab_layout.setSpacing(8)
         settings_tab_layout.setContentsMargins(4, 8, 4, 4)
 
-        # Таймауты и задержки
-        timing_group = QGroupBox("Таймауты и задержки")
+        # Таймауты и задержки (скрыты по умолчанию, открываются по коду 1922)
+        self.timing_group = QGroupBox("Таймауты и задержки")
+        self.timing_group.setVisible(False)  # Скрыто по умолчанию
         timing_layout = QFormLayout()
         timing_layout.setSpacing(6)
         
@@ -985,41 +982,31 @@ class UnifiedParserApp(QMainWindow):
         timing_layout.addRow("Задержка загрузки (мс):", self.page_load_delay_input)
         timing_layout.addRow("Задержка раскрытия (мс):", self.expand_delay_input)
         
-        timing_group.setLayout(timing_layout)
-        settings_tab_layout.addWidget(timing_group)
+        self.timing_group.setLayout(timing_layout)
+        settings_tab_layout.addWidget(self.timing_group)
+        
+        # Кнопка для ввода кода доступа к скрытым настройкам
+        code_button = QPushButton("🔒 Настройки парсинга")
+        code_button.clicked.connect(self.enter_secret_code)
+        settings_tab_layout.addWidget(code_button)
 
         # Настройки диапазона сопоставимости для НМЦК
-        nmcc_range_group = QGroupBox("Диапазон сопоставимости для НМЦК")
-        nmcc_range_layout = QFormLayout()
+        nmcc_range_group = QGroupBox()
+        nmcc_range_layout = QVBoxLayout()
         nmcc_range_layout.setSpacing(6)
+        
+        nmcc_title_label = QLabel("Диапазон сопоставимости для НМЦК")
+        nmcc_title_label.setStyleSheet("font-weight: bold; font-size: 12px;")
+        nmcc_range_layout.addWidget(nmcc_title_label)
         
         self.nmcc_volume_range_input = QLineEdit()
         self.nmcc_volume_range_input.setText("3")
         self.nmcc_volume_range_input.setToolTip("Максимальное отклонение по объему в разах (например, 3 означает диапазон [объем/3, объем*3])")
         
-        nmcc_range_layout.addRow("Макс. отклонение по объему (в разах):", self.nmcc_volume_range_input)
+        nmcc_range_layout.addWidget(self.nmcc_volume_range_input)
         
         nmcc_range_group.setLayout(nmcc_range_layout)
         settings_tab_layout.addWidget(nmcc_range_group)
-
-        # Пути к файлам
-        paths_group = QGroupBox("Пути к файлам")
-        paths_layout = QFormLayout()
-        paths_layout.setSpacing(6)
-        
-        self.archive_dir_input = QLineEdit()
-        self.archive_dir_input.setText("archive")
-        self.csv_file_input = QLineEdit()
-        self.csv_file_input.setText("export/unified_result.csv")
-        self.xlsx_file_input = QLineEdit()
-        self.xlsx_file_input.setText("export/unified_result.xlsx")
-        
-        paths_layout.addRow("Папка архива:", self.archive_dir_input)
-        paths_layout.addRow("CSV файл:", self.csv_file_input)
-        paths_layout.addRow("XLSX файл:", self.xlsx_file_input)
-        
-        paths_group.setLayout(paths_layout)
-        settings_tab_layout.addWidget(paths_group)
 
         settings_tab_layout.addStretch()
         settings_tab.setLayout(settings_tab_layout)
@@ -1042,18 +1029,12 @@ class UnifiedParserApp(QMainWindow):
         stats_group.setLayout(stats_layout)
         left_layout.addWidget(stats_group)
 
-        # Кнопка выгрузки в Excel (под блоком Статистика)
-        self.export_excel_button = QPushButton('ВЫГРУЗИТЬ В EXCEL')
-        self.export_excel_button.setMinimumHeight(35)
-        self.export_excel_button.clicked.connect(self.export_to_excel)
-        left_layout.addWidget(self.export_excel_button)
-
         # Кнопки действий
         actions_layout = QHBoxLayout()
         actions_layout.setSpacing(6)
         
-        self.price_button = QPushButton('Цена')  # Новая кнопка вместо "Открыть CSV"
-        self.price_button.clicked.connect(self.open_price_dialog)  # Пока без функции
+        self.price_button = QPushButton('Статистика')  # Переименована из "Цена"
+        self.price_button.clicked.connect(self.open_price_dialog)
         self.reset_button = QPushButton('СБРОС')
         self.reset_button.setStyleSheet("background-color: #ffcccc;")
         self.reset_button.clicked.connect(self.reset_data)
@@ -1061,6 +1042,22 @@ class UnifiedParserApp(QMainWindow):
         actions_layout.addWidget(self.price_button)
         actions_layout.addWidget(self.reset_button)
         left_layout.addLayout(actions_layout)
+
+        # Кнопки "Скачать" и "Загрузить" - аналогичного размера, в одну линию под "Статистикой" и "Сбросом"
+        export_import_layout = QHBoxLayout()
+        export_import_layout.setSpacing(6)
+        
+        self.export_excel_button = QPushButton('Скачать')
+        self.export_excel_button.setMinimumHeight(35)
+        self.export_excel_button.clicked.connect(self.export_to_excel)
+        
+        self.import_button = QPushButton('Загрузить')
+        self.import_button.setMinimumHeight(35)
+        self.import_button.clicked.connect(self.import_from_excel)
+        
+        export_import_layout.addWidget(self.export_excel_button)
+        export_import_layout.addWidget(self.import_button)
+        left_layout.addLayout(export_import_layout)
 
         left_layout.addStretch()
         left_panel.setLayout(left_layout)
@@ -1095,7 +1092,6 @@ class UnifiedParserApp(QMainWindow):
                 background-color: #ffffff; 
                 color: #000000;
                 border-bottom: 1px solid #ffffff;
-                font-weight: bold;
                 padding: 8px 16px;
             }
         """)
@@ -1641,6 +1637,23 @@ class UnifiedParserApp(QMainWindow):
             self.status_label.setText("Данные сброшены")
             self.append_log("=== ДАННЫЕ СБРОШЕНЫ ПОЛЬЗОВАТЕЛЕМ ===")
 
+    def enter_secret_code(self):
+        """Ввод секретного кода для отображения скрытых настроек парсинга"""
+        code, ok = QInputDialog.getText(
+            self,
+            "Ввод кода доступа",
+            "Введите код доступа к настройкам парсинга:",
+            QLineEdit.Password
+        )
+        
+        if ok and code == "1922":
+            self.timing_group.setVisible(True)
+            QMessageBox.information(self, "Доступ разрешен", "Настройки парсинга разблокированы")
+            self.append_log("Настройки парсинга разблокированы по коду 1922")
+        elif ok:
+            QMessageBox.warning(self, "Ошибка", "Неверный код доступа")
+            self.append_log("Попытка ввода неверного кода доступа")
+
     def export_to_excel(self):
         """Выгрузка видимых данных таблицы в Excel"""
         if self.results_table.rowCount() == 0:
@@ -1685,6 +1698,72 @@ class UnifiedParserApp(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить файл: {e}")
             self.append_log(f"Ошибка экспорта в Excel: {e}")
+    
+    def import_from_excel(self):
+        """Загрузка ранее скачанного файла Excel с переводом в итоговую таблицу"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Выберите файл Excel для загрузки",
+            "",
+            "Excel Files (*.xlsx);;All Files (*)"
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            from openpyxl import load_workbook
+            wb = load_workbook(file_path, data_only=True)
+            ws = wb.active
+            
+            # Очищаем текущую таблицу
+            self.results_table.setRowCount(0)
+            
+            # Устанавливаем заголовки и форматирование как при парсинге
+            self.results_table.setColumnCount(len(FIELD_ORDER))
+            self.results_table.setHorizontalHeaderLabels([EXPORT_HEADERS_RU[FIELD_ORDER[i]] for i in range(len(FIELD_ORDER))])
+            
+            # Настраиваем ширину колонок как при парсинге
+            for i in range(len(FIELD_ORDER)):
+                self.results_table.setColumnWidth(i, 150)
+            
+            # Пропускаем заголовок (первая строка)
+            header_row = None
+            data_rows = []
+            
+            for row_idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
+                if row_idx == 1:
+                    header_row = [str(cell).strip() if cell else "" for cell in row]
+                    continue
+                
+                # Преобразуем строку данных
+                row_data = [str(cell).strip() if cell is not None else "" for cell in row]
+                # Фильтруем полностью пустые строки
+                if any(cell for cell in row_data):
+                    data_rows.append(row_data)
+            
+            if not header_row or not data_rows:
+                QMessageBox.warning(self, "Внимание", "Файл не содержит данных или заголовков")
+                return
+            
+            # Заполняем данными
+            for row_data in data_rows:
+                row_position = self.results_table.rowCount()
+                self.results_table.insertRow(row_position)
+                for col_idx, value in enumerate(row_data):
+                    if col_idx < len(header_row):
+                        item = QTableWidgetItem(value)
+                        self.results_table.setItem(row_position, col_idx, item)
+            
+            # Не меняем ширину колонок - оставляем фиксированную ширину 150px как при парсинге
+            # self.results_table.resizeColumnsToContents()  # Убрано для сохранения фиксированной ширины
+            
+            QMessageBox.information(self, "Успех", f"Загружено {len(data_rows)} строк из {file_path}")
+            self.append_log(f"Импорт из Excel: {file_path}, строк: {len(data_rows)}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить файл: {e}")
+            self.append_log(f"Ошибка импорта из Excel: {e}")
     
     def export_nmcc_to_excel(self):
         """Выгрузка данных таблицы НМЦК в Excel с форматированием по образцу"""
@@ -2418,9 +2497,9 @@ class UnifiedParserApp(QMainWindow):
             moscow_only=self.region_checkbox.isChecked(),
             rosunimed_only=self.rosunimed_checkbox.isChecked(),
             max_contracts=max_contracts,
-            archive_dir=self.archive_dir_input.text(),
-            out_csv=self.csv_file_input.text(),
-            out_xlsx=self.xlsx_file_input.text() if self.xlsx_file_input.text() else None,
+            archive_dir="archive",  # Значение по умолчанию
+            out_csv="export/unified_result.csv",  # Значение по умолчанию
+            out_xlsx="export/unified_result.xlsx",  # Значение по умолчанию
             headed=False,
             trace=False,
             timeout_ms=timeout_ms,
@@ -3598,15 +3677,7 @@ class UnifiedParserApp(QMainWindow):
 
     def open_csv(self):
         """Открытие CSV файла"""
-        csv_path = Path(self.csv_file_input.text())
-        if not csv_path.exists():
-            QMessageBox.warning(self, "Внимание", "CSV файл еще не создан")
-            return
-        try:
-            import os
-            os.startfile(csv_path.resolve())
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось открыть CSV: {e}")
+        QMessageBox.information(self, "Информация", "Функция открытия CSV была удалена вместе с блоком 'Пути к файлам'")
 
     def open_price_dialog(self):
         """Открытие модального окна с аналитикой по цене"""
@@ -3918,15 +3989,7 @@ class UnifiedParserApp(QMainWindow):
 
     def open_folder(self):
         """Открытие папки с результатами"""
-        archive_dir = Path(self.archive_dir_input.text())
-        if not archive_dir.exists():
-            QMessageBox.warning(self, "Внимание", "Папка архива еще не создана")
-            return
-        try:
-            import os
-            os.startfile(archive_dir.resolve())
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось открыть папку: {e}")
+        QMessageBox.information(self, "Информация", "Функция открытия папки была удалена вместе с блоком 'Пути к файлам'")
 
     def show_about(self):
         """О программе"""
@@ -3976,7 +4039,8 @@ class UnifiedParserApp(QMainWindow):
         <p><b>3.1.</b> Таблица результатов содержит все найденные позиции. Двойной клик по ссылке в колонке 
         "Контракт (ссылка)" откроет её в браузере.</p>
         <p><b>3.2.</b> Используйте фильтры для отбора нужных позиций по МНН, форме выпуска и дозировке.</p>
-        <p><b>3.3.</b> Для выгрузки данных нажмите "Выгрузить в Excel" или "Выгрузить в CSV".</p>
+        <p><b>3.3.</b> Для выгрузки данных нажмите "Скачать".</p>
+        <p><b>3.4.</b> Для загрузки ранее выгруженного файла Excel нажмите "Загрузить" — данные будут импортированы в итоговую таблицу с сохранением форматирования.</p>
         
         <h3>4. Расчет НМЦК</h3>
         <p>Вкладка "НМЦК" предназначена для расчета начальной максимальной цены контракта.</p>
@@ -4006,14 +4070,12 @@ class UnifiedParserApp(QMainWindow):
         <p><b>5.2.</b> Поля ввода данных синхронизированы между вкладками "НМЦК" и "НМЦК ручной подбор".</p>
         
         <h3>6. Настройки</h3>
-        <p>Во вкладке "Настройки" можно изменить параметры парсинга:</p>
+        <p>Во вкладке "Настройки" можно изменить параметры:</p>
         <ul>
-            <li>Максимум контрактов — целевое количество контрактов для сбора</li>
-            <li>Таймаут ожидания (мс) — время ожидания загрузки страниц</li>
-            <li>Раунды раскрытия — количество раундов раскрытия списков</li>
-            <li>Задержка загрузки страницы (мс)</li>
-            <li>Задержка раскрытия (мс)</li>
+            <li><b>Диапазон сопоставимости для НМЦК</b> — максимальное отклонение по объему в разах</li>
         </ul>
+        <p><b>Скрытые настройки парсинга:</b></p>
+        <p>Для доступа к расширенным настройкам парсинга (таймауты, задержки, раунды раскрытия) нажмите кнопку "🔒 Настройки парсинга" и введите код доступа <code>1922</code>.</p>
         
         <h3>7. Сброс данных</h3>
         <p>Кнопка "Сброс" очищает:</p>
