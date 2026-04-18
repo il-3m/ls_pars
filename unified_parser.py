@@ -1126,37 +1126,21 @@ class UnifiedParserApp(QMainWindow):
         input_layout = QGridLayout()
         input_layout.setSpacing(6)
         
-        # Поле 1: Цена за ед. измерения по 1 КП
-        input_layout.addWidget(QLabel("Цена за ед. изм. по 1 КП (₽):"), 0, 0)
-        self.nmcc_price1_input = QLineEdit()
-        self.nmcc_price1_input.setPlaceholderText("0.00")
-        self.nmcc_price1_input.setObjectName("nmcc_input")
-        self.nmcc_price1_input.textChanged.connect(self.update_nmcc_summary)
-        input_layout.addWidget(self.nmcc_price1_input, 0, 1)
+        # Поле 1: Минимальная цена за ед. измерения по КП
+        input_layout.addWidget(QLabel("Минимальная цена за ед. измерения по КП (₽):"), 0, 0)
+        self.nmcc_min_price_kp_input = QLineEdit()
+        self.nmcc_min_price_kp_input.setPlaceholderText("0.00")
+        self.nmcc_min_price_kp_input.setObjectName("nmcc_input")
+        self.nmcc_min_price_kp_input.textChanged.connect(self.update_nmcc_summary)
+        input_layout.addWidget(self.nmcc_min_price_kp_input, 0, 1)
         
-        # Поле 2: Цена за ед. измерения по 2 КП
-        input_layout.addWidget(QLabel("Цена за ед. изм. по 2 КП (₽):"), 1, 0)
-        self.nmcc_price2_input = QLineEdit()
-        self.nmcc_price2_input.setPlaceholderText("0.00")
-        self.nmcc_price2_input.setObjectName("nmcc_input")
-        self.nmcc_price2_input.textChanged.connect(self.update_nmcc_summary)
-        input_layout.addWidget(self.nmcc_price2_input, 1, 1)
-        
-        # Поле 3: Цена за ед. измерения по 3 КП
-        input_layout.addWidget(QLabel("Цена за ед. изм. по 3 КП (₽):"), 2, 0)
-        self.nmcc_price3_input = QLineEdit()
-        self.nmcc_price3_input.setPlaceholderText("0.00")
-        self.nmcc_price3_input.setObjectName("nmcc_input")
-        self.nmcc_price3_input.textChanged.connect(self.update_nmcc_summary)
-        input_layout.addWidget(self.nmcc_price3_input, 2, 1)
-        
-        # Поле 4: Объем в ед. измерения
-        input_layout.addWidget(QLabel("Объем в ед. измерения:"), 3, 0)
+        # Поле 2: Объем в ед. измерения
+        input_layout.addWidget(QLabel("Объем в ед. измерения:"), 1, 0)
         self.nmcc_volume_input = QLineEdit()
         self.nmcc_volume_input.setPlaceholderText("0")
         self.nmcc_volume_input.setObjectName("nmcc_input")
         self.nmcc_volume_input.textChanged.connect(self.update_nmcc_summary)
-        input_layout.addWidget(self.nmcc_volume_input, 3, 1)
+        input_layout.addWidget(self.nmcc_volume_input, 1, 1)
         
         input_group.setLayout(input_layout)
         
@@ -1166,15 +1150,15 @@ class UnifiedParserApp(QMainWindow):
         summary_layout.setSpacing(6)
         
         # Метки для отображения итоговых данных
-        summary_layout.addWidget(QLabel("Средняя цена по КП (₽):"), 0, 0)
-        self.nmcc_avg_kp_label = QLabel("0.00")
-        self.nmcc_avg_kp_label.setStyleSheet("font-weight: bold; color: #0066cc;")
-        summary_layout.addWidget(self.nmcc_avg_kp_label, 0, 1)
+        summary_layout.addWidget(QLabel("Минимальная цена по КП (₽):"), 0, 0)
+        self.nmcc_min_kp_label = QLabel("0.00")
+        self.nmcc_min_kp_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+        summary_layout.addWidget(self.nmcc_min_kp_label, 0, 1)
         
-        summary_layout.addWidget(QLabel("Средняя по ЕИС (₽):"), 1, 0)
-        self.nmcc_avg_eis_label = QLabel("0.00")
-        self.nmcc_avg_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
-        summary_layout.addWidget(self.nmcc_avg_eis_label, 1, 1)
+        summary_layout.addWidget(QLabel("Минимальная по ЕИС (₽):"), 1, 0)
+        self.nmcc_min_eis_label = QLabel("0.00")
+        self.nmcc_min_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+        summary_layout.addWidget(self.nmcc_min_eis_label, 1, 1)
         
         summary_layout.addWidget(QLabel("Дельта средних цен (₽ / %):"), 2, 0)
         self.nmcc_price_delta_label = QLabel("0.00 (0.00%)")
@@ -1207,17 +1191,22 @@ class UnifiedParserApp(QMainWindow):
         buttons_layout.addWidget(self.nmcc_min_btn)
         
         self.nmcc_avg_btn = QPushButton("НМЦК приближенная к КП")
-        self.nmcc_avg_btn.setToolTip("Найти 3 позиции со средней ценой, наиболее близкой к средней по введенным КП")
+        self.nmcc_avg_btn.setToolTip("Найти 3 позиции с ценой выше минимальной по КП, наиболее близкой к ней")
         buttons_layout.addWidget(self.nmcc_avg_btn)
         
         self.nmcc_optimal_btn = QPushButton("НМЦК оптимальная")
         self.nmcc_optimal_btn.setToolTip(
             "Оптимальный алгоритм:\n"
-            "1. В приоритете 'вписаться в цену' (средняя цена ЕИС >= средней цены КП)\n"
-            "2. Минимизировать разброс по объему (не более 50% отклонения)\n"
+            "1. Сопоставимый объем закупки (отклонение не более чем в 2-3 раза)\n"
+            "2. Цена выше, чем минимальное по КП\n"
             "3. Баланс между ценой и объемом для наилучшего соответствия"
         )
         buttons_layout.addWidget(self.nmcc_optimal_btn)
+        
+        # Новая кнопка "НМЦК идеальная"
+        self.nmcc_ideal_btn = QPushButton("НМЦК идеальная")
+        self.nmcc_ideal_btn.setToolTip("Взять минимальную цену среди сопоставимых контрактов из ЕИС")
+        buttons_layout.addWidget(self.nmcc_ideal_btn)
         
         # Кнопки справа: Скачать Excel, Скопировать
         buttons_layout.addStretch()
@@ -1278,37 +1267,21 @@ class UnifiedParserApp(QMainWindow):
         manual_input_layout = QGridLayout()
         manual_input_layout.setSpacing(6)
         
-        # Поле 1: Цена за ед. измерения по 1 КП
-        manual_input_layout.addWidget(QLabel("Цена за ед. изм. по 1 КП (₽):"), 0, 0)
-        self.manual_nmcc_price1_input = QLineEdit()
-        self.manual_nmcc_price1_input.setPlaceholderText("0.00")
-        self.manual_nmcc_price1_input.setObjectName("nmcc_input")
-        self.manual_nmcc_price1_input.textChanged.connect(self.update_manual_nmcc_summary)
-        manual_input_layout.addWidget(self.manual_nmcc_price1_input, 0, 1)
+        # Поле 1: Минимальная цена за ед. измерения по КП
+        manual_input_layout.addWidget(QLabel("Минимальная цена за ед. измерения по КП (₽):"), 0, 0)
+        self.manual_nmcc_min_price_kp_input = QLineEdit()
+        self.manual_nmcc_min_price_kp_input.setPlaceholderText("0.00")
+        self.manual_nmcc_min_price_kp_input.setObjectName("nmcc_input")
+        self.manual_nmcc_min_price_kp_input.textChanged.connect(self.update_manual_nmcc_summary)
+        manual_input_layout.addWidget(self.manual_nmcc_min_price_kp_input, 0, 1)
         
-        # Поле 2: Цена за ед. измерения по 2 КП
-        manual_input_layout.addWidget(QLabel("Цена за ед. изм. по 2 КП (₽):"), 1, 0)
-        self.manual_nmcc_price2_input = QLineEdit()
-        self.manual_nmcc_price2_input.setPlaceholderText("0.00")
-        self.manual_nmcc_price2_input.setObjectName("nmcc_input")
-        self.manual_nmcc_price2_input.textChanged.connect(self.update_manual_nmcc_summary)
-        manual_input_layout.addWidget(self.manual_nmcc_price2_input, 1, 1)
-        
-        # Поле 3: Цена за ед. измерения по 3 КП
-        manual_input_layout.addWidget(QLabel("Цена за ед. изм. по 3 КП (₽):"), 2, 0)
-        self.manual_nmcc_price3_input = QLineEdit()
-        self.manual_nmcc_price3_input.setPlaceholderText("0.00")
-        self.manual_nmcc_price3_input.setObjectName("nmcc_input")
-        self.manual_nmcc_price3_input.textChanged.connect(self.update_manual_nmcc_summary)
-        manual_input_layout.addWidget(self.manual_nmcc_price3_input, 2, 1)
-        
-        # Поле 4: Объем в ед. измерения
-        manual_input_layout.addWidget(QLabel("Объем в ед. измерения:"), 3, 0)
+        # Поле 2: Объем в ед. измерения
+        manual_input_layout.addWidget(QLabel("Объем в ед. измерения:"), 1, 0)
         self.manual_nmcc_volume_input = QLineEdit()
         self.manual_nmcc_volume_input.setPlaceholderText("0")
         self.manual_nmcc_volume_input.setObjectName("nmcc_input")
         self.manual_nmcc_volume_input.textChanged.connect(self.update_manual_nmcc_summary)
-        manual_input_layout.addWidget(self.manual_nmcc_volume_input, 3, 1)
+        manual_input_layout.addWidget(self.manual_nmcc_volume_input, 1, 1)
         
         manual_input_group.setLayout(manual_input_layout)
         
@@ -1318,15 +1291,15 @@ class UnifiedParserApp(QMainWindow):
         manual_summary_layout.setSpacing(6)
         
         # Метки для отображения итоговых данных
-        manual_summary_layout.addWidget(QLabel("Средняя цена по КП (₽):"), 0, 0)
-        self.manual_nmcc_avg_kp_label = QLabel("0.00")
-        self.manual_nmcc_avg_kp_label.setStyleSheet("font-weight: bold; color: #0066cc;")
-        manual_summary_layout.addWidget(self.manual_nmcc_avg_kp_label, 0, 1)
+        manual_summary_layout.addWidget(QLabel("Минимальная цена по КП (₽):"), 0, 0)
+        self.manual_nmcc_min_kp_label = QLabel("0.00")
+        self.manual_nmcc_min_kp_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+        manual_summary_layout.addWidget(self.manual_nmcc_min_kp_label, 0, 1)
         
-        manual_summary_layout.addWidget(QLabel("Средняя по ЕИС (₽):"), 1, 0)
-        self.manual_nmcc_avg_eis_label = QLabel("0.00")
-        self.manual_nmcc_avg_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
-        manual_summary_layout.addWidget(self.manual_nmcc_avg_eis_label, 1, 1)
+        manual_summary_layout.addWidget(QLabel("Минимальная по ЕИС (₽):"), 1, 0)
+        self.manual_nmcc_min_eis_label = QLabel("0.00")
+        self.manual_nmcc_min_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+        manual_summary_layout.addWidget(self.manual_nmcc_min_eis_label, 1, 1)
         
         manual_summary_layout.addWidget(QLabel("Дельта средних цен (₽ / %):"), 2, 0)
         self.manual_nmcc_price_delta_label = QLabel("0.00 (0.00%)")
@@ -1399,14 +1372,10 @@ class UnifiedParserApp(QMainWindow):
         self.tables_tab_widget.addTab(self.manual_nmcc_tab, "НМЦК ручной подбор")
         
         # Подключаем сигналы для синхронизации полей ввода НМЦК между вкладками
-        self.nmcc_price1_input.textChanged.connect(self.sync_nmcc_price1)
-        self.nmcc_price2_input.textChanged.connect(self.sync_nmcc_price2)
-        self.nmcc_price3_input.textChanged.connect(self.sync_nmcc_price3)
+        self.nmcc_min_price_kp_input.textChanged.connect(self.sync_nmcc_min_price_kp)
         self.nmcc_volume_input.textChanged.connect(self.sync_nmcc_volume)
         
-        self.manual_nmcc_price1_input.textChanged.connect(self.sync_manual_nmcc_price1)
-        self.manual_nmcc_price2_input.textChanged.connect(self.sync_manual_nmcc_price2)
-        self.manual_nmcc_price3_input.textChanged.connect(self.sync_manual_nmcc_price3)
+        self.manual_nmcc_min_price_kp_input.textChanged.connect(self.sync_manual_nmcc_min_price_kp)
         self.manual_nmcc_volume_input.textChanged.connect(self.sync_manual_nmcc_volume)
         
         # Флаг для предотвращения рекурсивной синхронизации
@@ -1417,6 +1386,7 @@ class UnifiedParserApp(QMainWindow):
         self.nmcc_min_btn.clicked.connect(self.calculate_nmcc_by_min_price)
         self.nmcc_avg_btn.clicked.connect(self.calculate_nmcc_by_avg_price)
         self.nmcc_optimal_btn.clicked.connect(self.calculate_nmcc_optimal)
+        self.nmcc_ideal_btn.clicked.connect(self.calculate_nmcc_ideal)
         
         right_layout.addWidget(self.tables_tab_widget)
         right_panel.setLayout(right_layout)
@@ -2908,26 +2878,21 @@ class UnifiedParserApp(QMainWindow):
             logging.error(f"Ошибка calculate_nmcc_by_volume: {e}", exc_info=True)
     
     def calculate_nmcc_by_avg_price(self):
-        """Расчет НМЦК приближенный к КП: найти 3 позиции со средней ценой, наиболее близкой к средней по введенным КП
+        """Расчет НМЦК приближенный к КП: найти 3 позиции с ценой выше минимальной по КП, наиболее близкой к ней
         КРИТИЧЕСКИ ВАЖНО: позиции должны быть из 3 разных контрактов
         """
         try:
-            # Получаем цены из полей ввода
-            prices = []
-            for input_field in [self.nmcc_price1_input, self.nmcc_price2_input, self.nmcc_price3_input]:
-                price_str = input_field.text().strip()
-                if price_str:
-                    try:
-                        prices.append(float(price_str.replace(',', '.')))
-                    except ValueError:
-                        continue
-            
-            if len(prices) == 0:
-                QMessageBox.warning(self, "Внимание", "Введите хотя бы одну цену за ед. измерения по КП")
+            # Получаем минимальную цену из поля ввода
+            min_price_kp_str = self.nmcc_min_price_kp_input.text().strip()
+            if not min_price_kp_str:
+                QMessageBox.warning(self, "Внимание", "Введите минимальную цену за ед. измерения по КП")
                 return
             
-            # Вычисляем среднюю арифметическую по введенным КП
-            avg_price_kp = sum(prices) / len(prices)
+            try:
+                min_price_kp = float(min_price_kp_str.replace(',', '.'))
+            except ValueError:
+                QMessageBox.warning(self, "Внимание", "Некорректное значение цены")
+                return
             
             # Находим индекс колонки price_per_unit, reestr_number и qty_consumption_unit
             price_col_index = FIELD_ORDER.index('price_per_unit')
@@ -2960,8 +2925,12 @@ class UnifiedParserApp(QMainWindow):
                     if item and item.text() and reestr_item and reestr_item.text():
                         try:
                             price = float(item.text().replace(',', '.'))
+                            # Берем только цены ВЫШЕ минимальной по КП
+                            if price <= min_price_kp:
+                                continue
                             reestr_number = reestr_item.text().strip()
-                            delta = abs(price - avg_price_kp)
+                            # Дельта = насколько цена выше минимальной (чем меньше, тем лучше)
+                            delta = price - min_price_kp
                             
                             # Для каждого контракта сохраняем позицию с минимальной дельтой
                             if reestr_number not in contract_best_rows or delta < contract_best_rows[reestr_number][2]:
@@ -2970,10 +2939,10 @@ class UnifiedParserApp(QMainWindow):
                             continue
             
             if len(contract_best_rows) < 3:
-                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено контрактов с ценой и объемом: {len(contract_best_rows)}, требуется минимум 3")
+                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено контрактов с ценой выше минимальной по КП: {len(contract_best_rows)}, требуется минимум 3")
                 return
             
-            # Сортируем контракты по дельте (наилучшие позиции)
+            # Сортируем контракты по дельте (наилучшие позиции - самые близкие к минимальной по КП)
             sorted_contracts = sorted(contract_best_rows.values(), key=lambda x: x[2])
             
             # Берем 3 лучших контракта (каждый с одной наилучшей позицией)
@@ -2988,11 +2957,12 @@ class UnifiedParserApp(QMainWindow):
             self.nmcc_volume_btn.setStyleSheet("")
             self.nmcc_min_btn.setStyleSheet("")
             self.nmcc_optimal_btn.setStyleSheet("")
+            self.nmcc_ideal_btn.setStyleSheet("")
             
             # Переключаемся на вкладку НМЦК
             self.tables_tab_widget.setCurrentIndex(1)
             
-            self.append_log(f"НМЦК по средней цене КП: средняя цена={avg_price_kp:.2f}₽, выбрано 3 позиции из 3 разных контрактов")
+            self.append_log(f"НМЦК приближенная к КП: минимальная цена={min_price_kp:.2f}₽, выбрано 3 позиции из 3 разных контрактов с ближайшими ценами выше")
             
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка при расчете НМЦК по средней цене: {e}")
@@ -3061,15 +3031,15 @@ class UnifiedParserApp(QMainWindow):
         """Оптимальный алгоритм расчета НМЦК:
         
         Логика:
-        1. В приоритете 'вписаться в цену' - средняя цена ЕИС должна быть >= средней цены КП
-        2. Не допускать значительного разброса по объему (макс. отклонение <= 50%)
-        3. Использовать комбинированный скоринг для баланса между ценой и объемом
+        1. Сопоставимый объем закупки (отклонение не более чем в 2-3 раза)
+        2. Цена выше, чем минимальное по КП
+        3. Баланс между ценой и объемом для наилучшего соответствия
         4. КРИТИЧЕСКИ ВАЖНО: позиции должны быть из 3 разных контрактов
         
         Алгоритм:
         - Для каждой позиции вычисляем скоринг на основе:
-          * Ценовой фактор: насколько цена близка к целевой (с бонусом за EIS >= KP)
-          * Объемный фактор: насколько объем близок к целевому (с штрафом за >50% отклонение)
+          * Ценовой фактор: цена должна быть выше минимальной по КП
+          * Объемный фактор: отклонение объема не более чем в 2-3 раза от целевого
         - ГРУППИРУЕМ по контрактам - для каждого контракта берем лучшую позицию
         - Отбираем 3 позиции с наилучшим综合ным скорингом из 3 разных контрактов
         """
@@ -3082,20 +3052,17 @@ class UnifiedParserApp(QMainWindow):
             
             target_volume = float(volume_str.replace(',', '.'))
             
-            prices = []
-            for input_field in [self.nmcc_price1_input, self.nmcc_price2_input, self.nmcc_price3_input]:
-                price_str = input_field.text().strip()
-                if price_str:
-                    try:
-                        prices.append(float(price_str.replace(',', '.')))
-                    except ValueError:
-                        continue
-            
-            if len(prices) == 0:
-                QMessageBox.warning(self, "Внимание", "Введите хотя бы одну цену за ед. измерения по КП")
+            # Получаем минимальную цену из поля ввода
+            min_price_kp_str = self.nmcc_min_price_kp_input.text().strip()
+            if not min_price_kp_str:
+                QMessageBox.warning(self, "Внимание", "Введите минимальную цену за ед. измерения по КП")
                 return
             
-            avg_price_kp = sum(prices) / len(prices)
+            try:
+                min_price_kp = float(min_price_kp_str.replace(',', '.'))
+            except ValueError:
+                QMessageBox.warning(self, "Внимание", "Некорректное значение цены")
+                return
             
             # Находим индексы колонок
             price_col_index = FIELD_ORDER.index('price_per_unit')
@@ -3122,33 +3089,29 @@ class UnifiedParserApp(QMainWindow):
                             if qty < 100 or qty_text.upper() == "НАИМЕНОВАНИЕ":
                                 continue
                             
+                            # Пропускаем позиции с ценой ниже или равной минимальной по КП
+                            if price <= min_price_kp:
+                                continue
+                            
                             reestr_number = reestr_item.text().strip()
                             
                             # Вычисляем скоринг для этой позиции
-                            # 1. Ценовой скоринг (0-100 баллов)
-                            price_delta = abs(price - avg_price_kp)
-                            price_diff_score = max(0, 100 - (price_delta / max(avg_price_kp, 0.01)) * 100)
-                            
-                            # Бонус за EIS >= KP (вписаться в цену)
-                            if price >= avg_price_kp:
-                                price_bonus = 50
+                            # 1. Объемный скоринг (0-100 баллов)
+                            # Отклонение не более чем в 2-3 раза (т.е. объем должен быть в диапазоне [target/3, target*3])
+                            volume_ratio = qty / max(target_volume, 0.01)
+                            if 0.33 <= volume_ratio <= 3.0:
+                                # В допустимом диапазоне - считаем процент отклонения от идеала (1.0)
+                                volume_diff_percent = abs(1.0 - volume_ratio) * 100
+                                volume_score = max(0, 100 - volume_diff_percent)
                             else:
-                                price_bonus = 0
+                                # Вне диапазона - большой штраф
+                                volume_score = max(0, 50 - abs(volume_ratio - 1.67) * 20)
                             
-                            price_score = price_diff_score + price_bonus
+                            # 2. Ценовой скоринг (0-100 баллов) - бонус за цену выше минимальной по КП
+                            price_bonus = min(100, (price - min_price_kp) / max(min_price_kp, 0.01) * 50)
                             
-                            # 2. Объемный скоринг (0-100 баллов)
-                            volume_delta = abs(qty - target_volume)
-                            volume_diff_percent = (volume_delta / max(target_volume, 0.01)) * 100
-                            
-                            # Штраф за превышение 50% отклонения
-                            if volume_diff_percent <= 50:
-                                volume_score = 100 - volume_diff_percent
-                            else:
-                                volume_score = max(0, 100 - volume_diff_percent * 2)
-                            
-                            # 3. Комбинированный скоринг
-                            combined_score = price_score * 0.6 + volume_score * 0.4
+                            # 3. Комбинированный скоринг (объем важнее)
+                            combined_score = volume_score * 0.7 + price_bonus * 0.3
                             
                             # Для каждого контракта сохраняем позицию с наилучшим скорингом
                             if reestr_number not in contract_best_rows or combined_score > contract_best_rows[reestr_number][3]:
@@ -3175,6 +3138,7 @@ class UnifiedParserApp(QMainWindow):
             self.nmcc_volume_btn.setStyleSheet("")
             self.nmcc_min_btn.setStyleSheet("")
             self.nmcc_avg_btn.setStyleSheet("")
+            self.nmcc_ideal_btn.setStyleSheet("")
             
             # Переключаемся на вкладку НМЦК
             self.tables_tab_widget.setCurrentIndex(1)
@@ -3182,12 +3146,93 @@ class UnifiedParserApp(QMainWindow):
             # Формируем подробное сообщение о результатах
             selected_info = [f"цена={r[1]:.2f}₽, объем={r[2]:.2f}, скор={r[3]:.1f}" 
                           for r in sorted_contracts[:3]]
-            self.append_log(f"НМЦК Оптимальный: средняя цена КП={avg_price_kp:.2f}₽, целевой объем={target_volume}")
+            self.append_log(f"НМЦК Оптимальная: минимальная цена КП={min_price_kp:.2f}₽, целевой объем={target_volume}")
             self.append_log(f"Выбрано 3 позиции из 3 разных контрактов: {'; '.join(selected_info)}")
             
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка при оптимальном расчете НМЦК: {e}")
             logging.error(f"Ошибка calculate_nmcc_optimal: {e}", exc_info=True)
+    
+    def calculate_nmcc_ideal(self):
+        """Расчет НМЦК идеальная: взять минимальную цену среди сопоставимых контрактов из ЕИС
+        
+        Логика:
+        1. Берем все позиции с ценой выше минимальной по КП
+        2. Находим минимальную цену среди них
+        3. Выбираем 3 позиции с наименьшей ценой из 3 разных контрактов
+        
+        КРИТИЧЕСКИ ВАЖНО: позиции должны быть из 3 разных контрактов
+        """
+        try:
+            # Получаем минимальную цену из поля ввода
+            min_price_kp_str = self.nmcc_min_price_kp_input.text().strip()
+            if not min_price_kp_str:
+                QMessageBox.warning(self, "Внимание", "Введите минимальную цену за ед. измерения по КП")
+                return
+            
+            try:
+                min_price_kp = float(min_price_kp_str.replace(',', '.'))
+            except ValueError:
+                QMessageBox.warning(self, "Внимание", "Некорректное значение цены")
+                return
+            
+            # Находим индекс колонки price_per_unit и reestr_number
+            price_col_index = FIELD_ORDER.index('price_per_unit')
+            reestr_col_index = FIELD_ORDER.index('reestr_number')
+            
+            # Собираем все видимые строки из итоговой таблицы
+            # ГРУППИРУЕМ по номерам контрактов - для каждого контракта берем лучшую позицию (мин. цену выше КП)
+            contract_best_rows = {}  # reestr_number -> (row, price)
+            
+            for row in range(self.results_table.rowCount()):
+                if not self.results_table.isRowHidden(row):
+                    item = self.results_table.item(row, price_col_index)
+                    reestr_item = self.results_table.item(row, reestr_col_index)
+                    
+                    if item and item.text() and reestr_item and reestr_item.text():
+                        try:
+                            price = float(item.text().replace(',', '.'))
+                            # Берем только цены ВЫШЕ минимальной по КП
+                            if price <= min_price_kp:
+                                continue
+                            reestr_number = reestr_item.text().strip()
+                            
+                            # Для каждого контракта сохраняем позицию с минимальной ценой
+                            if reestr_number not in contract_best_rows or price < contract_best_rows[reestr_number][1]:
+                                contract_best_rows[reestr_number] = (row, price)
+                        except ValueError:
+                            continue
+            
+            if len(contract_best_rows) < 3:
+                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено контрактов с ценой выше минимальной по КП: {len(contract_best_rows)}, требуется минимум 3")
+                return
+            
+            # Сортируем контракты по возрастанию цены (наименьшие цены)
+            sorted_contracts = sorted(contract_best_rows.values(), key=lambda x: x[1])
+            
+            # Берем 3 позиции с наименьшей ценой (из 3 разных контрактов)
+            top_3_rows = [(r[0], r[1]) for r in sorted_contracts[:3]]  # (row_index, price)
+            
+            # Заполняем таблицу НМЦК
+            self.fill_nmcc_table(top_3_rows)
+            
+            # Окрашиваем периметр кнопки в зеленый цвет
+            self.nmcc_ideal_btn.setStyleSheet("border: 3px solid green;")
+            # Сбрасываем стиль у других кнопок
+            self.nmcc_volume_btn.setStyleSheet("")
+            self.nmcc_min_btn.setStyleSheet("")
+            self.nmcc_avg_btn.setStyleSheet("")
+            self.nmcc_optimal_btn.setStyleSheet("")
+            
+            # Переключаемся на вкладку НМЦК
+            self.tables_tab_widget.setCurrentIndex(1)
+            
+            selected_prices = [f"{row[1]:.2f}₽" for row in top_3_rows]
+            self.append_log(f"НМЦК идеальная: выбрана минимальная цена среди сопоставимых контрактов из 3 разных контрактов: {', '.join(selected_prices)}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при расчете НМЦК идеальная: {e}")
+            logging.error(f"Ошибка calculate_nmcc_ideal: {e}", exc_info=True)
     
     def fill_nmcc_table(self, row_indices):
         """Заполнение таблицы НМЦК данными из указанных строк итоговой таблицы
@@ -3262,23 +3307,18 @@ class UnifiedParserApp(QMainWindow):
     def update_nmcc_summary(self):
         """Расчет и обновление итоговых данных в блоке 'Итоговые данные' (вкладка НМЦК)"""
         try:
-            # 1. Средняя цена по КП: (цена КП1 + цена КП2 + цена КП3) / 3
-            prices = []
-            for input_field in [self.nmcc_price1_input, self.nmcc_price2_input, self.nmcc_price3_input]:
-                price_str = input_field.text().strip()
-                if price_str:
-                    try:
-                        prices.append(float(price_str.replace(',', '.')))
-                    except ValueError:
-                        continue
-            
-            if len(prices) > 0:
-                avg_kp = sum(prices) / len(prices)
-                self.nmcc_avg_kp_label.setText(f"{avg_kp:.2f}")
+            # 1. Минимальная цена по КП: берется из поля ввода
+            min_price_kp_str = self.nmcc_min_price_kp_input.text().strip()
+            if min_price_kp_str:
+                try:
+                    min_kp = float(min_price_kp_str.replace(',', '.'))
+                    self.nmcc_min_kp_label.setText(f"{min_kp:.2f}")
+                except ValueError:
+                    self.nmcc_min_kp_label.setText("0.00")
             else:
-                self.nmcc_avg_kp_label.setText("0.00")
+                self.nmcc_min_kp_label.setText("0.00")
             
-            # 2. Средняя по ЕИС: сумма цен из таблицы "результат расчета НМЦК" / 3
+            # 2. Минимальная по ЕИС: минимальная цена из таблицы "результат расчета НМЦК"
             price_col_index = FIELD_ORDER.index('price_per_unit')
             eis_prices = []
             for row in range(self.nmcc_table.rowCount()):
@@ -3291,33 +3331,39 @@ class UnifiedParserApp(QMainWindow):
                         continue
             
             if len(eis_prices) > 0:
-                avg_eis = sum(eis_prices) / len(eis_prices)
-                self.nmcc_avg_eis_label.setText(f"{avg_eis:.2f}")
+                min_eis = min(eis_prices)
+                self.nmcc_min_eis_label.setText(f"{min_eis:.2f}")
             else:
-                self.nmcc_avg_eis_label.setText("0.00")
+                self.nmcc_min_eis_label.setText("0.00")
             
-            # 3. Дельта средних цен: абсолютное и относительное отклонение
-            # Дельта = средняя ЕИС - средняя КП (положительная = ЕИС выше, что хорошо для "вписаться в цену")
-            if len(prices) > 0 and len(eis_prices) > 0:
-                price_delta_abs = avg_eis - avg_kp
-                if avg_kp != 0:
-                    price_delta_percent = (price_delta_abs / avg_kp) * 100
-                else:
-                    price_delta_percent = 0.0
-                self.nmcc_price_delta_label.setText(f"{price_delta_abs:.2f} ({price_delta_percent:.2f}%)")
-                
-                # Выделяем бордовым цветом, если средняя цена по ЕИС ниже средней цены по КП
-                if avg_eis < avg_kp:
-                    burgundy_color = "#800020"  # Бордовый цвет
-                    self.nmcc_avg_eis_label.setStyleSheet(f"font-weight: bold; color: {burgundy_color};")
-                    self.nmcc_price_delta_label.setStyleSheet(f"font-weight: bold; color: {burgundy_color};")
-                else:
-                    # Возвращаем стандартный цвет
-                    self.nmcc_avg_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+            # 3. Дельта цен: абсолютное и относительное отклонение
+            # Дельта = минимальная ЕИС - минимальная КП (положительная = ЕИС выше, что хорошо)
+            if min_price_kp_str and len(eis_prices) > 0:
+                try:
+                    min_kp = float(min_price_kp_str.replace(',', '.'))
+                    price_delta_abs = min_eis - min_kp
+                    if min_kp != 0:
+                        price_delta_percent = (price_delta_abs / min_kp) * 100
+                    else:
+                        price_delta_percent = 0.0
+                    self.nmcc_price_delta_label.setText(f"{price_delta_abs:.2f} ({price_delta_percent:.2f}%)")
+                    
+                    # Выделяем бордовым цветом, если минимальная цена по ЕИС ниже минимальной цены по КП
+                    if min_eis < min_kp:
+                        burgundy_color = "#800020"  # Бордовый цвет
+                        self.nmcc_min_eis_label.setStyleSheet(f"font-weight: bold; color: {burgundy_color};")
+                        self.nmcc_price_delta_label.setStyleSheet(f"font-weight: bold; color: {burgundy_color};")
+                    else:
+                        # Возвращаем стандартный цвет
+                        self.nmcc_min_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+                        self.nmcc_price_delta_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+                except ValueError:
+                    self.nmcc_price_delta_label.setText("0.00 (0.00%)")
+                    self.nmcc_min_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
                     self.nmcc_price_delta_label.setStyleSheet("font-weight: bold; color: #0066cc;")
             else:
                 self.nmcc_price_delta_label.setText("0.00 (0.00%)")
-                self.nmcc_avg_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+                self.nmcc_min_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
                 self.nmcc_price_delta_label.setStyleSheet("font-weight: bold; color: #0066cc;")
             
             # 4. Максимальное отклонение по объему: абсолютное и относительное
@@ -3358,31 +3404,26 @@ class UnifiedParserApp(QMainWindow):
                 
         except Exception as e:
             logging.error(f"Ошибка update_nmcc_summary: {e}", exc_info=True)
-            self.nmcc_avg_kp_label.setText("0.00")
-            self.nmcc_avg_eis_label.setText("0.00")
+            self.nmcc_min_kp_label.setText("0.00")
+            self.nmcc_min_eis_label.setText("0.00")
             self.nmcc_price_delta_label.setText("0.00 (0.00%)")
             self.nmcc_max_deviation_label.setText("0.00 (0.00%)")
 
     def update_manual_nmcc_summary(self):
         """Расчет и обновление итоговых данных в блоке 'Итоговые данные' (вкладка НМЦК ручной подбор)"""
         try:
-            # 1. Средняя цена по КП: (цена КП1 + цена КП2 + цена КП3) / 3
-            prices = []
-            for input_field in [self.manual_nmcc_price1_input, self.manual_nmcc_price2_input, self.manual_nmcc_price3_input]:
-                price_str = input_field.text().strip()
-                if price_str:
-                    try:
-                        prices.append(float(price_str.replace(',', '.')))
-                    except ValueError:
-                        continue
-            
-            if len(prices) > 0:
-                avg_kp = sum(prices) / len(prices)
-                self.manual_nmcc_avg_kp_label.setText(f"{avg_kp:.2f}")
+            # 1. Минимальная цена по КП: берется из поля ввода
+            min_price_kp_str = self.manual_nmcc_min_price_kp_input.text().strip()
+            if min_price_kp_str:
+                try:
+                    min_kp = float(min_price_kp_str.replace(',', '.'))
+                    self.manual_nmcc_min_kp_label.setText(f"{min_kp:.2f}")
+                except ValueError:
+                    self.manual_nmcc_min_kp_label.setText("0.00")
             else:
-                self.manual_nmcc_avg_kp_label.setText("0.00")
+                self.manual_nmcc_min_kp_label.setText("0.00")
             
-            # 2. Средняя по ЕИС: сумма цен из таблицы "Позиции для НМЦК (ручной подбор)" / 3
+            # 2. Минимальная по ЕИС: минимальная цена из таблицы "Позиции для НМЦК (ручной подбор)"
             price_col_index = FIELD_ORDER.index('price_per_unit')
             eis_prices = []
             for row in range(self.manual_nmcc_table.rowCount()):
@@ -3395,32 +3436,38 @@ class UnifiedParserApp(QMainWindow):
                         continue
             
             if len(eis_prices) > 0:
-                avg_eis = sum(eis_prices) / len(eis_prices)
-                self.manual_nmcc_avg_eis_label.setText(f"{avg_eis:.2f}")
+                min_eis = min(eis_prices)
+                self.manual_nmcc_min_eis_label.setText(f"{min_eis:.2f}")
             else:
-                self.manual_nmcc_avg_eis_label.setText("0.00")
+                self.manual_nmcc_min_eis_label.setText("0.00")
             
-            # 3. Дельта средних цен: абсолютное и относительное отклонение
-            if len(prices) > 0 and len(eis_prices) > 0:
-                price_delta_abs = avg_eis - avg_kp
-                if avg_kp != 0:
-                    price_delta_percent = (price_delta_abs / avg_kp) * 100
-                else:
-                    price_delta_percent = 0.0
-                self.manual_nmcc_price_delta_label.setText(f"{price_delta_abs:.2f} ({price_delta_percent:.2f}%)")
-                
-                # Выделяем бордовым цветом, если средняя цена по ЕИС ниже средней цены по КП
-                if avg_eis < avg_kp:
-                    burgundy_color = "#800020"  # Бордовый цвет
-                    self.manual_nmcc_avg_eis_label.setStyleSheet(f"font-weight: bold; color: {burgundy_color};")
-                    self.manual_nmcc_price_delta_label.setStyleSheet(f"font-weight: bold; color: {burgundy_color};")
-                else:
-                    # Возвращаем стандартный цвет
-                    self.manual_nmcc_avg_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+            # 3. Дельта цен: абсолютное и относительное отклонение
+            if min_price_kp_str and len(eis_prices) > 0:
+                try:
+                    min_kp = float(min_price_kp_str.replace(',', '.'))
+                    price_delta_abs = min_eis - min_kp
+                    if min_kp != 0:
+                        price_delta_percent = (price_delta_abs / min_kp) * 100
+                    else:
+                        price_delta_percent = 0.0
+                    self.manual_nmcc_price_delta_label.setText(f"{price_delta_abs:.2f} ({price_delta_percent:.2f}%)")
+                    
+                    # Выделяем бордовым цветом, если минимальная цена по ЕИС ниже минимальной цены по КП
+                    if min_eis < min_kp:
+                        burgundy_color = "#800020"  # Бордовый цвет
+                        self.manual_nmcc_min_eis_label.setStyleSheet(f"font-weight: bold; color: {burgundy_color};")
+                        self.manual_nmcc_price_delta_label.setStyleSheet(f"font-weight: bold; color: {burgundy_color};")
+                    else:
+                        # Возвращаем стандартный цвет
+                        self.manual_nmcc_min_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+                        self.manual_nmcc_price_delta_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+                except ValueError:
+                    self.manual_nmcc_price_delta_label.setText("0.00 (0.00%)")
+                    self.manual_nmcc_min_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
                     self.manual_nmcc_price_delta_label.setStyleSheet("font-weight: bold; color: #0066cc;")
             else:
                 self.manual_nmcc_price_delta_label.setText("0.00 (0.00%)")
-                self.manual_nmcc_avg_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
+                self.manual_nmcc_min_eis_label.setStyleSheet("font-weight: bold; color: #0066cc;")
                 self.manual_nmcc_price_delta_label.setStyleSheet("font-weight: bold; color: #0066cc;")
             
             # 4. Максимальное отклонение по объему: абсолютное и относительное
@@ -3461,31 +3508,17 @@ class UnifiedParserApp(QMainWindow):
                 
         except Exception as e:
             logging.error(f"Ошибка update_manual_nmcc_summary: {e}", exc_info=True)
-            self.manual_nmcc_avg_kp_label.setText("0.00")
-            self.manual_nmcc_avg_eis_label.setText("0.00")
+            self.manual_nmcc_min_kp_label.setText("0.00")
+            self.manual_nmcc_min_eis_label.setText("0.00")
             self.manual_nmcc_price_delta_label.setText("0.00 (0.00%)")
             self.manual_nmcc_max_deviation_label.setText("0.00 (0.00%)")
 
     # Методы для синхронизации полей ввода НМЦК между вкладками
-    def sync_nmcc_price1(self, text):
-        """Синхронизация поля цены 1 из вкладки НМЦК во вкладку ручной подбор"""
+    def sync_nmcc_min_price_kp(self, text):
+        """Синхронизация поля минимальной цены КП из вкладки НМЦК во вкладку ручной подбор"""
         if not self._syncing_nmcc_fields:
             self._syncing_nmcc_fields = True
-            self.manual_nmcc_price1_input.setText(text)
-            self._syncing_nmcc_fields = False
-    
-    def sync_nmcc_price2(self, text):
-        """Синхронизация поля цены 2 из вкладки НМЦК во вкладку ручной подбор"""
-        if not self._syncing_nmcc_fields:
-            self._syncing_nmcc_fields = True
-            self.manual_nmcc_price2_input.setText(text)
-            self._syncing_nmcc_fields = False
-    
-    def sync_nmcc_price3(self, text):
-        """Синхронизация поля цены 3 из вкладки НМЦК во вкладку ручной подбор"""
-        if not self._syncing_nmcc_fields:
-            self._syncing_nmcc_fields = True
-            self.manual_nmcc_price3_input.setText(text)
+            self.manual_nmcc_min_price_kp_input.setText(text)
             self._syncing_nmcc_fields = False
     
     def sync_nmcc_volume(self, text):
@@ -3495,25 +3528,11 @@ class UnifiedParserApp(QMainWindow):
             self.manual_nmcc_volume_input.setText(text)
             self._syncing_nmcc_fields = False
     
-    def sync_manual_nmcc_price1(self, text):
-        """Синхронизация поля цены 1 из вкладки ручной подбор во вкладку НМЦК"""
+    def sync_manual_nmcc_min_price_kp(self, text):
+        """Синхронизация поля минимальной цены КП из вкладки ручной подбор во вкладку НМЦК"""
         if not self._syncing_nmcc_fields:
             self._syncing_nmcc_fields = True
-            self.nmcc_price1_input.setText(text)
-            self._syncing_nmcc_fields = False
-    
-    def sync_manual_nmcc_price2(self, text):
-        """Синхронизация поля цены 2 из вкладки ручной подбор во вкладку НМЦК"""
-        if not self._syncing_nmcc_fields:
-            self._syncing_nmcc_fields = True
-            self.nmcc_price2_input.setText(text)
-            self._syncing_nmcc_fields = False
-    
-    def sync_manual_nmcc_price3(self, text):
-        """Синхронизация поля цены 3 из вкладки ручной подбор во вкладку НМЦК"""
-        if not self._syncing_nmcc_fields:
-            self._syncing_nmcc_fields = True
-            self.nmcc_price3_input.setText(text)
+            self.nmcc_min_price_kp_input.setText(text)
             self._syncing_nmcc_fields = False
     
     def sync_manual_nmcc_volume(self, text):
