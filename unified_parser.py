@@ -777,9 +777,7 @@ class UnifiedParserApp(QMainWindow):
                 color: #000000;
                 border-bottom: 1px solid #ffffff;
                 font-weight: bold;
-                margin-top: -1px;
-                padding-top: 9px;
-                padding-bottom: 7px;
+                padding: 8px 16px;
             }
             QTabBar::tab:hover:!selected { background-color: #f5f5f5; }
             QTableWidget { 
@@ -1042,14 +1040,11 @@ class UnifiedParserApp(QMainWindow):
         
         self.price_button = QPushButton('Цена')  # Новая кнопка вместо "Открыть CSV"
         self.price_button.clicked.connect(self.open_price_dialog)  # Пока без функции
-        self.open_folder_button = QPushButton('Папка')
-        self.open_folder_button.clicked.connect(self.open_folder)
         self.reset_button = QPushButton('СБРОС')
         self.reset_button.setStyleSheet("background-color: #ffcccc;")
         self.reset_button.clicked.connect(self.reset_data)
         
         actions_layout.addWidget(self.price_button)
-        actions_layout.addWidget(self.open_folder_button)
         actions_layout.addWidget(self.reset_button)
         left_layout.addLayout(actions_layout)
 
@@ -1059,8 +1054,8 @@ class UnifiedParserApp(QMainWindow):
         # === ПРАВАЯ ЧАСТЬ: ТАБЛИЦА РЕЗУЛЬТАТОВ ===
         right_panel = QWidget()
         right_layout = QVBoxLayout()
-        right_layout.setSpacing(0)
-        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(8)
+        right_layout.setContentsMargins(8, 8, 8, 8)
 
         # Вкладки для таблиц: "Итоговая" и "НМЦК" - выравнивание по верхнему уровню с левой панелью
         self.tables_tab_widget = QTabWidget()
@@ -1087,9 +1082,7 @@ class UnifiedParserApp(QMainWindow):
                 color: #000000;
                 border-bottom: 1px solid #ffffff;
                 font-weight: bold;
-                margin-top: -1px;
-                padding-top: 9px;
-                padding-bottom: 7px;
+                padding: 8px 16px;
             }
         """)
         
@@ -1344,9 +1337,9 @@ class UnifiedParserApp(QMainWindow):
         manual_nmcc_table_layout.setSpacing(0)
         manual_nmcc_table_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Панель с кнопкой удаления позиции
+        # Панель с кнопкой удаления позиции - поднята вверх аналогично кнопке "НМЦК по объему"
         manual_table_buttons_layout = QHBoxLayout()
-        manual_table_buttons_layout.setSpacing(6)
+        manual_table_buttons_layout.setSpacing(8)
         
         self.delete_manual_nmcc_row_btn = QPushButton("Удалить позицию")
         self.delete_manual_nmcc_row_btn.setStyleSheet("background-color: #ffcccc;")
@@ -1355,7 +1348,7 @@ class UnifiedParserApp(QMainWindow):
         manual_table_buttons_layout.addWidget(self.delete_manual_nmcc_row_btn)
         manual_table_buttons_layout.addStretch()
         
-        manual_nmcc_table_layout.addLayout(manual_table_buttons_layout)
+        manual_nmcc_tab_layout.addLayout(manual_table_buttons_layout)
         
         self.manual_nmcc_table = QTableWidget()
         self.manual_nmcc_table.setColumnCount(len(FIELD_ORDER))
