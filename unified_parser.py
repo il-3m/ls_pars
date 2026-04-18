@@ -71,7 +71,7 @@ from PyQt5.QtWidgets import (
     QHeaderView, QFrame, QScrollArea, QTabWidget, QGroupBox, QDialogButtonBox
 )
 from PyQt5.QtCore import QDate, Qt, QThread, pyqtSignal, QStringListModel, QUrl
-from PyQt5.QtGui import QColor, QDesktopServices
+from PyQt5.QtGui import QColor, QDesktopServices, QClipboard
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
@@ -1219,7 +1219,18 @@ class UnifiedParserApp(QMainWindow):
         )
         buttons_layout.addWidget(self.nmcc_optimal_btn)
         
+        # Кнопки справа: Скачать Excel, Скопировать
         buttons_layout.addStretch()
+        self.nmcc_export_excel_btn = QPushButton("Скачать Excel")
+        self.nmcc_export_excel_btn.setToolTip("Скачать таблицу НМЦК в формате Excel")
+        self.nmcc_export_excel_btn.clicked.connect(self.export_nmcc_to_excel)
+        buttons_layout.addWidget(self.nmcc_export_excel_btn)
+        
+        self.nmcc_copy_btn = QPushButton("Скопировать")
+        self.nmcc_copy_btn.setToolTip("Скопировать таблицу НМЦК в буфер обмена")
+        self.nmcc_copy_btn.clicked.connect(self.copy_nmcc_to_clipboard)
+        buttons_layout.addWidget(self.nmcc_copy_btn)
+        
         nmcc_tab_layout.addLayout(buttons_layout)
         
         # Таблица НМЦК
@@ -1350,7 +1361,18 @@ class UnifiedParserApp(QMainWindow):
         self.delete_manual_nmcc_row_btn.setToolTip("Удалить выделенную строку из таблицы")
         self.delete_manual_nmcc_row_btn.clicked.connect(self.delete_manual_nmcc_row)
         manual_table_buttons_layout.addWidget(self.delete_manual_nmcc_row_btn)
+        
+        # Кнопки справа: Скачать Excel, Скопировать
         manual_table_buttons_layout.addStretch()
+        self.manual_nmcc_export_excel_btn = QPushButton("Скачать Excel")
+        self.manual_nmcc_export_excel_btn.setToolTip("Скачать таблицу НМЦК ручной подбор в формате Excel")
+        self.manual_nmcc_export_excel_btn.clicked.connect(self.export_manual_nmcc_to_excel)
+        manual_table_buttons_layout.addWidget(self.manual_nmcc_export_excel_btn)
+        
+        self.manual_nmcc_copy_btn = QPushButton("Скопировать")
+        self.manual_nmcc_copy_btn.setToolTip("Скопировать таблицу НМЦК ручной подбор в буфер обмена")
+        self.manual_nmcc_copy_btn.clicked.connect(self.copy_manual_nmcc_to_clipboard)
+        manual_table_buttons_layout.addWidget(self.manual_nmcc_copy_btn)
         
         manual_nmcc_tab_layout.addLayout(manual_table_buttons_layout)
         
@@ -1676,6 +1698,587 @@ class UnifiedParserApp(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить файл: {e}")
             self.append_log(f"Ошибка экспорта в Excel: {e}")
+    
+    def export_nmcc_to_excel(self):
+        """Выгрузка данных таблицы НМЦК в Excel с форматированием по образцу"""
+        if self.nmcc_table.rowCount() == 0:
+            QMessageBox.warning(self, "Внимание", "Нет данных для выгрузки")
+            return
+        
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Сохранить НМЦК в Excel",
+            "",
+            "Excel Files (*.xlsx);;All Files (*)"
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            from openpyxl import Workbook
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "НМЦК"
+            
+            # Получаем значения из фильтров
+            filter_mnn = self.filter_result_input.currentText().strip()
+            filter_form = self.filter_form_input.currentText().strip()
+            filter_dose = self.filter_dose_input.currentText().strip()
+            
+            # Формируем заголовок: МНН, форма выпуска, дозировка
+            header_parts = []
+            if filter_mnn:
+                header_parts.append(f"МНН:{filter_mnn}")
+            if filter_form:
+                header_parts.append(f"форма выпуска:{filter_form}")
+            if filter_dose:
+                header_parts.append(f"дозировка:{filter_dose}")
+            
+            header_text = ", ".join(header_parts) if header_parts else "НМЦК"
+            
+            # Строка 1: объединенная ячейка с заголовком
+            ws.merge_cells('A1:G1')
+            ws['A1'] = header_text
+            
+            # Строка 2: заголовки столбцов
+            headers = [
+                '№ п/п',
+                'Наименование заказчика',
+                'Объект закупки',
+                'Кол-во товара',
+                'Цена по договору/контракту за единицу товара без учета НДС (если применяется), руб.',
+                'Номер и дата контракта (номер реестровой записи)',
+                'Ссылка на страницу в сети Интернет'
+            ]
+            for col, header in enumerate(headers, start=1):
+                ws.cell(row=2, column=col, value=header)
+            
+            # Данные из таблицы
+            price_col_index = FIELD_ORDER.index('price_per_unit')
+            qty_col_index = FIELD_ORDER.index('qty_consumption_unit')
+            
+            all_prices = []
+            
+            for row_idx in range(self.nmcc_table.rowCount()):
+                # Получаем данные из строки таблицы
+                customer_name_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('customer_name'))
+                mnn_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('mnn'))
+                form_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('release_form'))
+                dose_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('dose'))
+                package_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('primary_package_type'))
+                qty_item = self.nmcc_table.item(row_idx, qty_col_index)
+                price_item = self.nmcc_table.item(row_idx, price_col_index)
+                contract_number_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('contract_number'))
+                contract_date_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('contract_date'))
+                reestr_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('reestr_number'))
+                link_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('contract_link'))
+                
+                customer_name = customer_name_item.text() if customer_name_item else ""
+                mnn = mnn_item.text() if mnn_item else ""
+                form = form_item.text() if form_item else ""
+                dose = dose_item.text() if dose_item else ""
+                package = package_item.text() if package_item else ""
+                qty = qty_item.text() if qty_item else ""
+                price = price_item.text() if price_item else ""
+                contract_number = contract_number_item.text() if contract_number_item else ""
+                contract_date = contract_date_item.text() if contract_date_item else ""
+                reestr = reestr_item.text() if reestr_item else ""
+                link = link_item.text() if link_item else ""
+                
+                # Объект закупки: Объединить: МНН:_____ (взять из МНН (ГРЛС)); Форма выпуска:______; Дозировка:__________; Вид первичной упаковки _____
+                object_name = f"МНН:{mnn}; Форма выпуска:{form}; Дозировка:{dose}; Вид первичной упаковки:{package}"
+                
+                # Номер и дата контракта (номер реестровой записи): Номер контракта... от ... Дата контракта ... (Номер реестровой записи : Номер реестра))
+                contract_info = f"Номер контракта:{contract_number} от {contract_date} (Номер реестровой записи : {reestr})"
+                
+                # Сохраняем цену для расчета диапазона
+                if price:
+                    try:
+                        all_prices.append(float(price.replace(',', '.')))
+                    except ValueError:
+                        pass
+                
+                # Заполняем строку
+                data_row = row_idx + 3
+                ws.cell(row=data_row, column=1, value=f"{row_idx + 1}.")
+                ws.cell(row=data_row, column=2, value=customer_name)
+                ws.cell(row=data_row, column=3, value=object_name)
+                ws.cell(row=data_row, column=4, value=qty)
+                ws.cell(row=data_row, column=5, value=price)
+                ws.cell(row=data_row, column=6, value=contract_info)
+                ws.cell(row=data_row, column=7, value=link)
+            
+            # Последняя строка: Диапазон цен
+            last_row = self.nmcc_table.rowCount() + 3
+            
+            if all_prices:
+                min_price = min(all_prices)
+                max_price = max(all_prices)
+                price_range = f"{min_price:.2f} – {max_price:.2f}"
+            else:
+                price_range = "0.00 – 0.00"
+            
+            # Объединяем ячейки для левой части
+            ws.merge_cells(f'A{last_row}:E{last_row}')
+            ws.cell(row=last_row, column=1, value='Диапазон цен за единицу товара без учета НДС, рублей:')
+            
+            # Правая часть с диапазоном
+            ws.merge_cells(f'F{last_row}:G{last_row}')
+            ws.cell(row=last_row, column=6, value=price_range)
+            
+            wb.save(file_path)
+            QMessageBox.information(self, "Успех", f"Данные НМЦК сохранены в {file_path}")
+            self.append_log(f"Экспорт НМЦК в Excel: {file_path}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить файл: {e}")
+            self.append_log(f"Ошибка экспорта НМЦК в Excel: {e}")
+    
+    def copy_nmcc_to_clipboard(self):
+        """Копирование данных таблицы НМЦК в буфер обмена с форматированием"""
+        if self.nmcc_table.rowCount() == 0:
+            QMessageBox.warning(self, "Внимание", "Нет данных для копирования")
+            return
+        
+        try:
+            from openpyxl import Workbook
+            from io import BytesIO
+            import tempfile
+            import os
+            
+            # Создаем временный файл Excel
+            temp_fd, temp_path = tempfile.mkstemp(suffix='.xlsx')
+            os.close(temp_fd)
+            
+            try:
+                from openpyxl import Workbook
+                wb = Workbook()
+                ws = wb.active
+                ws.title = "НМЦК"
+                
+                # Получаем значения из фильтров
+                filter_mnn = self.filter_result_input.currentText().strip()
+                filter_form = self.filter_form_input.currentText().strip()
+                filter_dose = self.filter_dose_input.currentText().strip()
+                
+                # Формируем заголовок: МНН, форма выпуска, дозировка
+                header_parts = []
+                if filter_mnn:
+                    header_parts.append(f"МНН:{filter_mnn}")
+                if filter_form:
+                    header_parts.append(f"форма выпуска:{filter_form}")
+                if filter_dose:
+                    header_parts.append(f"дозировка:{filter_dose}")
+                
+                header_text = ", ".join(header_parts) if header_parts else "НМЦК"
+                
+                # Строка 1: объединенная ячейка с заголовком
+                ws.merge_cells('A1:G1')
+                ws['A1'] = header_text
+                
+                # Строка 2: заголовки столбцов
+                headers = [
+                    '№ п/п',
+                    'Наименование заказчика',
+                    'Объект закупки',
+                    'Кол-во товара',
+                    'Цена по договору/контракту за единицу товара без учета НДС (если применяется), руб.',
+                    'Номер и дата контракта (номер реестровой записи)',
+                    'Ссылка на страницу в сети Интернет'
+                ]
+                for col, header in enumerate(headers, start=1):
+                    ws.cell(row=2, column=col, value=header)
+                
+                # Данные из таблицы
+                price_col_index = FIELD_ORDER.index('price_per_unit')
+                qty_col_index = FIELD_ORDER.index('qty_consumption_unit')
+                
+                all_prices = []
+                
+                for row_idx in range(self.nmcc_table.rowCount()):
+                    # Получаем данные из строки таблицы
+                    customer_name_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('customer_name'))
+                    mnn_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('mnn'))
+                    form_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('release_form'))
+                    dose_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('dose'))
+                    package_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('primary_package_type'))
+                    qty_item = self.nmcc_table.item(row_idx, qty_col_index)
+                    price_item = self.nmcc_table.item(row_idx, price_col_index)
+                    contract_number_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('contract_number'))
+                    contract_date_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('contract_date'))
+                    reestr_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('reestr_number'))
+                    link_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('contract_link'))
+                    
+                    customer_name = customer_name_item.text() if customer_name_item else ""
+                    mnn = mnn_item.text() if mnn_item else ""
+                    form = form_item.text() if form_item else ""
+                    dose = dose_item.text() if dose_item else ""
+                    package = package_item.text() if package_item else ""
+                    qty = qty_item.text() if qty_item else ""
+                    price = price_item.text() if price_item else ""
+                    contract_number = contract_number_item.text() if contract_number_item else ""
+                    contract_date = contract_date_item.text() if contract_date_item else ""
+                    reestr = reestr_item.text() if reestr_item else ""
+                    link = link_item.text() if link_item else ""
+                    
+                    # Объект закупки
+                    object_name = f"МНН:{mnn}; Форма выпуска:{form}; Дозировка:{dose}; Вид первичной упаковки:{package}"
+                    
+                    # Номер и дата контракта
+                    contract_info = f"Номер контракта:{contract_number} от {contract_date} (Номер реестровой записи : {reestr})"
+                    
+                    # Сохраняем цену для расчета диапазона
+                    if price:
+                        try:
+                            all_prices.append(float(price.replace(',', '.')))
+                        except ValueError:
+                            pass
+                    
+                    # Заполняем строку
+                    data_row = row_idx + 3
+                    ws.cell(row=data_row, column=1, value=f"{row_idx + 1}.")
+                    ws.cell(row=data_row, column=2, value=customer_name)
+                    ws.cell(row=data_row, column=3, value=object_name)
+                    ws.cell(row=data_row, column=4, value=qty)
+                    ws.cell(row=data_row, column=5, value=price)
+                    ws.cell(row=data_row, column=6, value=contract_info)
+                    ws.cell(row=data_row, column=7, value=link)
+                
+                # Последняя строка: Диапазон цен
+                last_row = self.nmcc_table.rowCount() + 3
+                
+                if all_prices:
+                    min_price = min(all_prices)
+                    max_price = max(all_prices)
+                    price_range = f"{min_price:.2f} – {max_price:.2f}"
+                else:
+                    price_range = "0.00 – 0.00"
+                
+                # Объединяем ячейки для левой части
+                ws.merge_cells(f'A{last_row}:E{last_row}')
+                ws.cell(row=last_row, column=1, value='Диапазон цен за единицу товара без учета НДС, рублей:')
+                
+                # Правая часть с диапазоном
+                ws.merge_cells(f'F{last_row}:G{last_row}')
+                ws.cell(row=last_row, column=6, value=price_range)
+                
+                wb.save(temp_path)
+                
+                # Читаем файл и копируем в буфер
+                with open(temp_path, 'rb') as f:
+                    excel_data = f.read()
+                
+                # Копируем в буфер обмена как HTML таблицу
+                clipboard = QApplication.clipboard()
+                
+                # Формируем HTML представление таблицы
+                html_table = f"""<table border="1">
+<tr><td colspan="7">{header_text}</td></tr>
+<tr>{''.join(f'<th>{h}</th>' for h in headers)}</tr>
+"""
+                
+                for row_idx in range(self.nmcc_table.rowCount()):
+                    customer_name_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('customer_name'))
+                    mnn_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('mnn'))
+                    form_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('release_form'))
+                    dose_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('dose'))
+                    package_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('primary_package_type'))
+                    qty_item = self.nmcc_table.item(row_idx, qty_col_index)
+                    price_item = self.nmcc_table.item(row_idx, price_col_index)
+                    contract_number_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('contract_number'))
+                    contract_date_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('contract_date'))
+                    reestr_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('reestr_number'))
+                    link_item = self.nmcc_table.item(row_idx, FIELD_ORDER.index('contract_link'))
+                    
+                    customer_name = customer_name_item.text() if customer_name_item else ""
+                    mnn = mnn_item.text() if mnn_item else ""
+                    form = form_item.text() if form_item else ""
+                    dose = dose_item.text() if dose_item else ""
+                    package = package_item.text() if package_item else ""
+                    qty = qty_item.text() if qty_item else ""
+                    price = price_item.text() if price_item else ""
+                    contract_number = contract_number_item.text() if contract_number_item else ""
+                    contract_date = contract_date_item.text() if contract_date_item else ""
+                    reestr = reestr_item.text() if reestr_item else ""
+                    link = link_item.text() if link_item else ""
+                    
+                    object_name = f"МНН:{mnn}; Форма выпуска:{form}; Дозировка:{dose}; Вид первичной упаковки:{package}"
+                    contract_info = f"Номер контракта:{contract_number} от {contract_date} (Номер реестровой записи : {reestr})"
+                    
+                    html_table += f"""<tr>
+<td>{row_idx + 1}.</td>
+<td>{customer_name}</td>
+<td>{object_name}</td>
+<td>{qty}</td>
+<td>{price}</td>
+<td>{contract_info}</td>
+<td>{link}</td>
+</tr>
+"""
+                
+                html_table += f"""<tr><td colspan="5">Диапазон цен за единицу товара без учета НДС, рублей:</td><td colspan="2">{price_range}</td></tr>
+</table>"""
+                
+                # Устанавливаем HTML в буфер
+                clipboard.setText(html_table)
+                
+                QMessageBox.information(self, "Успех", "Таблица НМЦК скопирована в буфер обмена")
+                self.append_log("Копирование НМЦК в буфер обмена: успешно")
+                
+            finally:
+                # Удаляем временный файл
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось скопировать данные: {e}")
+            self.append_log(f"Ошибка копирования НМЦК: {e}")
+    
+    def export_manual_nmcc_to_excel(self):
+        """Выгрузка данных таблицы НМЦК ручной подбор в Excel с форматированием по образцу"""
+        if self.manual_nmcc_table.rowCount() == 0:
+            QMessageBox.warning(self, "Внимание", "Нет данных для выгрузки")
+            return
+        
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Сохранить НМЦК ручной подбор в Excel",
+            "",
+            "Excel Files (*.xlsx);;All Files (*)"
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            from openpyxl import Workbook
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "НМЦК"
+            
+            # Получаем значения из фильтров
+            filter_mnn = self.filter_result_input.currentText().strip()
+            filter_form = self.filter_form_input.currentText().strip()
+            filter_dose = self.filter_dose_input.currentText().strip()
+            
+            # Формируем заголовок: МНН, форма выпуска, дозировка
+            header_parts = []
+            if filter_mnn:
+                header_parts.append(f"МНН:{filter_mnn}")
+            if filter_form:
+                header_parts.append(f"форма выпуска:{filter_form}")
+            if filter_dose:
+                header_parts.append(f"дозировка:{filter_dose}")
+            
+            header_text = ", ".join(header_parts) if header_parts else "НМЦК"
+            
+            # Строка 1: объединенная ячейка с заголовком
+            ws.merge_cells('A1:G1')
+            ws['A1'] = header_text
+            
+            # Строка 2: заголовки столбцов
+            headers = [
+                '№ п/п',
+                'Наименование заказчика',
+                'Объект закупки',
+                'Кол-во товара',
+                'Цена по договору/контракту за единицу товара без учета НДС (если применяется), руб.',
+                'Номер и дата контракта (номер реестровой записи)',
+                'Ссылка на страницу в сети Интернет'
+            ]
+            for col, header in enumerate(headers, start=1):
+                ws.cell(row=2, column=col, value=header)
+            
+            # Данные из таблицы
+            price_col_index = FIELD_ORDER.index('price_per_unit')
+            qty_col_index = FIELD_ORDER.index('qty_consumption_unit')
+            
+            all_prices = []
+            
+            for row_idx in range(self.manual_nmcc_table.rowCount()):
+                # Получаем данные из строки таблицы
+                customer_name_item = self.manual_nmcc_table.item(row_idx, FIELD_ORDER.index('customer_name'))
+                mnn_item = self.manual_nmcc_table.item(row_idx, FIELD_ORDER.index('mnn'))
+                form_item = self.manual_nmcc_table.item(row_idx, FIELD_ORDER.index('release_form'))
+                dose_item = self.manual_nmcc_table.item(row_idx, FIELD_ORDER.index('dose'))
+                package_item = self.manual_nmcc_table.item(row_idx, FIELD_ORDER.index('primary_package_type'))
+                qty_item = self.manual_nmcc_table.item(row_idx, qty_col_index)
+                price_item = self.manual_nmcc_table.item(row_idx, price_col_index)
+                contract_number_item = self.manual_nmcc_table.item(row_idx, FIELD_ORDER.index('contract_number'))
+                contract_date_item = self.manual_nmcc_table.item(row_idx, FIELD_ORDER.index('contract_date'))
+                reestr_item = self.manual_nmcc_table.item(row_idx, FIELD_ORDER.index('reestr_number'))
+                link_item = self.manual_nmcc_table.item(row_idx, FIELD_ORDER.index('contract_link'))
+                
+                customer_name = customer_name_item.text() if customer_name_item else ""
+                mnn = mnn_item.text() if mnn_item else ""
+                form = form_item.text() if form_item else ""
+                dose = dose_item.text() if dose_item else ""
+                package = package_item.text() if package_item else ""
+                qty = qty_item.text() if qty_item else ""
+                price = price_item.text() if price_item else ""
+                contract_number = contract_number_item.text() if contract_number_item else ""
+                contract_date = contract_date_item.text() if contract_date_item else ""
+                reestr = reestr_item.text() if reestr_item else ""
+                link = link_item.text() if link_item else ""
+                
+                # Объект закупки: Объединить: МНН:_____ (взять из МНН (ГРЛС)); Форма выпуска:______; Дозировка:__________; Вид первичной упаковки _____
+                object_name = f"МНН:{mnn}; Форма выпуска:{form}; Дозировка:{dose}; Вид первичной упаковки:{package}"
+                
+                # Номер и дата контракта (номер реестровой записи): Номер контракта... от ... Дата контракта ... (Номер реестровой записи : Номер реестра))
+                contract_info = f"Номер контракта:{contract_number} от {contract_date} (Номер реестровой записи : {reestr})"
+                
+                # Сохраняем цену для расчета диапазона
+                if price:
+                    try:
+                        all_prices.append(float(price.replace(',', '.')))
+                    except ValueError:
+                        pass
+                
+                # Заполняем строку
+                data_row = row_idx + 3
+                ws.cell(row=data_row, column=1, value=f"{row_idx + 1}.")
+                ws.cell(row=data_row, column=2, value=customer_name)
+                ws.cell(row=data_row, column=3, value=object_name)
+                ws.cell(row=data_row, column=4, value=qty)
+                ws.cell(row=data_row, column=5, value=price)
+                ws.cell(row=data_row, column=6, value=contract_info)
+                ws.cell(row=data_row, column=7, value=link)
+            
+            # Последняя строка: Диапазон цен
+            last_row = self.manual_nmcc_table.rowCount() + 3
+            
+            if all_prices:
+                min_price = min(all_prices)
+                max_price = max(all_prices)
+                price_range = f"{min_price:.2f} – {max_price:.2f}"
+            else:
+                price_range = "0.00 – 0.00"
+            
+            # Объединяем ячейки для левой части
+            ws.merge_cells(f'A{last_row}:E{last_row}')
+            ws.cell(row=last_row, column=1, value='Диапазон цен за единицу товара без учета НДС, рублей:')
+            
+            # Правая часть с диапазоном
+            ws.merge_cells(f'F{last_row}:G{last_row}')
+            ws.cell(row=last_row, column=6, value=price_range)
+            
+            wb.save(file_path)
+            QMessageBox.information(self, "Успех", f"Данные НМЦК ручной подбор сохранены в {file_path}")
+            self.append_log(f"Экспорт НМЦК ручной подбор в Excel: {file_path}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить файл: {e}")
+            self.append_log(f"Ошибка экспорта НМЦК ручной подбор в Excel: {e}")
+    
+    def copy_manual_nmcc_to_clipboard(self):
+        """Копирование данных таблицы НМЦК ручной подбор в буфер обмена с форматированием"""
+        if self.manual_nmcc_table.rowCount() == 0:
+            QMessageBox.warning(self, "Внимание", "Нет данных для копирования")
+            return
+        
+        try:
+            # Формируем HTML представление таблицы
+            clipboard = QApplication.clipboard()
+            
+            # Получаем значения из фильтров
+            filter_mnn = self.filter_result_input.currentText().strip()
+            filter_form = self.filter_form_input.currentText().strip()
+            filter_dose = self.filter_dose_input.currentText().strip()
+            
+            # Формируем заголовок: МНН, форма выпуска, дозировка
+            header_parts = []
+            if filter_mnn:
+                header_parts.append(f"МНН:{filter_mnn}")
+            if filter_form:
+                header_parts.append(f"форма выпуска:{filter_form}")
+            if filter_dose:
+                header_parts.append(f"дозировка:{filter_dose}")
+            
+            header_text = ", ".join(header_parts) if header_parts else "НМЦК"
+            
+            headers = [
+                '№ п/п',
+                'Наименование заказчика',
+                'Объект закупки',
+                'Кол-во товара',
+                'Цена по договору/контракту за единицу товара без учета НДС (если применяется), руб.',
+                'Номер и дата контракта (номер реестровой записи)',
+                'Ссылка на страницу в сети Интернет'
+            ]
+            
+            price_col_index = FIELD_ORDER.index('price_per_unit')
+            qty_col_index = FIELD_ORDER.index('qty_consumption_unit')
+            
+            all_prices = []
+            rows_html = []
+            
+            for row_idx in range(self.manual_nmcc_table.rowCount()):
+                customer_name_item = self.manual_nmcc_table.item(row_idx, FIELD_ORDER.index('customer_name'))
+                mnn_item = self.manual_nmcc_table.item(row_idx, FIELD_ORDER.index('mnn'))
+                form_item = self.manual_nmcc_table.item(row_idx, FIELD_ORDER.index('release_form'))
+                dose_item = self.manual_nmcc_table.item(row_idx, FIELD_ORDER.index('dose'))
+                package_item = self.manual_nmcc_table.item(row_idx, FIELD_ORDER.index('primary_package_type'))
+                qty_item = self.manual_nmcc_table.item(row_idx, qty_col_index)
+                price_item = self.manual_nmcc_table.item(row_idx, price_col_index)
+                contract_number_item = self.manual_nmcc_table.item(row_idx, FIELD_ORDER.index('contract_number'))
+                contract_date_item = self.manual_nmcc_table.item(row_idx, FIELD_ORDER.index('contract_date'))
+                reestr_item = self.manual_nmcc_table.item(row_idx, FIELD_ORDER.index('reestr_number'))
+                link_item = self.manual_nmcc_table.item(row_idx, FIELD_ORDER.index('contract_link'))
+                
+                customer_name = customer_name_item.text() if customer_name_item else ""
+                mnn = mnn_item.text() if mnn_item else ""
+                form = form_item.text() if form_item else ""
+                dose = dose_item.text() if dose_item else ""
+                package = package_item.text() if package_item else ""
+                qty = qty_item.text() if qty_item else ""
+                price = price_item.text() if price_item else ""
+                contract_number = contract_number_item.text() if contract_number_item else ""
+                contract_date = contract_date_item.text() if contract_date_item else ""
+                reestr = reestr_item.text() if reestr_item else ""
+                link = link_item.text() if link_item else ""
+                
+                object_name = f"МНН:{mnn}; Форма выпуска:{form}; Дозировка:{dose}; Вид первичной упаковки:{package}"
+                contract_info = f"Номер контракта:{contract_number} от {contract_date} (Номер реестровой записи : {reestr})"
+                
+                if price:
+                    try:
+                        all_prices.append(float(price.replace(',', '.')))
+                    except ValueError:
+                        pass
+                
+                rows_html.append(f"""<tr>
+<td>{row_idx + 1}.</td>
+<td>{customer_name}</td>
+<td>{object_name}</td>
+<td>{qty}</td>
+<td>{price}</td>
+<td>{contract_info}</td>
+<td>{link}</td>
+</tr>""")
+            
+            if all_prices:
+                min_price = min(all_prices)
+                max_price = max(all_prices)
+                price_range = f"{min_price:.2f} – {max_price:.2f}"
+            else:
+                price_range = "0.00 – 0.00"
+            
+            html_table = f"""<table border="1">
+<tr><td colspan="7">{header_text}</td></tr>
+<tr>{''.join(f'<th>{h}</th>' for h in headers)}</tr>
+{''.join(rows_html)}
+<tr><td colspan="5">Диапазон цен за единицу товара без учета НДС, рублей:</td><td colspan="2">{price_range}</td></tr>
+</table>"""
+            
+            clipboard.setText(html_table)
+            
+            QMessageBox.information(self, "Успех", "Таблица НМЦК ручной подбор скопирована в буфер обмена")
+            self.append_log("Копирование НМЦК ручной подбор в буфер обмена: успешно")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось скопировать данные: {e}")
+            self.append_log(f"Ошибка копирования НМЦК ручной подбор: {e}")
 
     def append_log(self, text):
         """Добавление записи в лог"""
