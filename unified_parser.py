@@ -776,7 +776,6 @@ class UnifiedParserApp(QMainWindow):
                 background-color: #ffffff; 
                 color: #000000;
                 border-bottom: 1px solid #ffffff;
-                font-weight: bold;
                 padding: 8px 16px;
             }
             QTabBar::tab:hover:!selected { background-color: #f5f5f5; }
@@ -966,8 +965,37 @@ class UnifiedParserApp(QMainWindow):
         settings_tab_layout.setSpacing(8)
         settings_tab_layout.setContentsMargins(4, 8, 4, 4)
 
-        # Таймауты и задержки
-        timing_group = QGroupBox("Таймауты и задержки")
+        # Поле ввода кода администратора
+        admin_group = QGroupBox("Администратор")
+        admin_layout = QFormLayout()
+        admin_layout.setSpacing(6)
+        
+        self.admin_code_input = QLineEdit()
+        self.admin_code_input.setPlaceholderText("Введите код администратора")
+        self.admin_code_input.textChanged.connect(self._check_admin_code)
+        
+        admin_layout.addRow("Код администратора:", self.admin_code_input)
+        admin_group.setLayout(admin_layout)
+        settings_tab_layout.addWidget(admin_group)
+
+        # Настройки диапазона сопоставимости для НМЦК (по объему)
+        self.nmcc_range_group = QGroupBox("Диапазон сопоставимости для НМЦК (по объему)")
+        self.nmcc_range_group.setVisible(False)
+        nmcc_range_layout = QFormLayout()
+        nmcc_range_layout.setSpacing(6)
+        
+        self.nmcc_volume_range_input = QLineEdit()
+        self.nmcc_volume_range_input.setText("3")
+        self.nmcc_volume_range_input.setToolTip("Максимальное отклонение по объему в разах (например, 3 означает диапазон [объем/3, объем*3])")
+        
+        nmcc_range_layout.addRow("Макс. отклонение по объему (в разах):", self.nmcc_volume_range_input)
+        
+        self.nmcc_range_group.setLayout(nmcc_range_layout)
+        settings_tab_layout.addWidget(self.nmcc_range_group)
+
+        # Таймауты и задержки (скрыты по умолчанию)
+        self.timing_group = QGroupBox("Таймауты и задержки")
+        self.timing_group.setVisible(False)
         timing_layout = QFormLayout()
         timing_layout.setSpacing(6)
         
@@ -985,22 +1013,8 @@ class UnifiedParserApp(QMainWindow):
         timing_layout.addRow("Задержка загрузки (мс):", self.page_load_delay_input)
         timing_layout.addRow("Задержка раскрытия (мс):", self.expand_delay_input)
         
-        timing_group.setLayout(timing_layout)
-        settings_tab_layout.addWidget(timing_group)
-
-        # Настройки диапазона сопоставимости для НМЦК
-        nmcc_range_group = QGroupBox("Диапазон сопоставимости для НМЦК")
-        nmcc_range_layout = QFormLayout()
-        nmcc_range_layout.setSpacing(6)
-        
-        self.nmcc_volume_range_input = QLineEdit()
-        self.nmcc_volume_range_input.setText("3")
-        self.nmcc_volume_range_input.setToolTip("Максимальное отклонение по объему в разах (например, 3 означает диапазон [объем/3, объем*3])")
-        
-        nmcc_range_layout.addRow("Макс. отклонение по объему (в разах):", self.nmcc_volume_range_input)
-        
-        nmcc_range_group.setLayout(nmcc_range_layout)
-        settings_tab_layout.addWidget(nmcc_range_group)
+        self.timing_group.setLayout(timing_layout)
+        settings_tab_layout.addWidget(self.timing_group)
 
         # Пути к файлам
         paths_group = QGroupBox("Пути к файлам")
@@ -1095,7 +1109,6 @@ class UnifiedParserApp(QMainWindow):
                 background-color: #ffffff; 
                 color: #000000;
                 border-bottom: 1px solid #ffffff;
-                font-weight: bold;
                 padding: 8px 16px;
             }
         """)
@@ -1636,10 +1649,24 @@ class UnifiedParserApp(QMainWindow):
             self.filter_form_input.setCurrentText("")
             self.filter_dose_input.setCurrentText("")
             
+            # Сбрасываем код администратора и скрываем настройки
+            self.admin_code_input.clear()
+            self.timing_group.setVisible(False)
+            self.nmcc_range_group.setVisible(False)
+            
             # НЕ очищаем базу данных (reference_data остается загруженной)
             # Обновляем статус
             self.status_label.setText("Данные сброшены")
             self.append_log("=== ДАННЫЕ СБРОШЕНЫ ПОЛЬЗОВАТЕЛЕМ ===")
+
+    def _check_admin_code(self, text):
+        """Проверка кода администратора для отображения скрытых настроек"""
+        if text == "1922":
+            self.timing_group.setVisible(True)
+            self.nmcc_range_group.setVisible(True)
+        else:
+            self.timing_group.setVisible(False)
+            self.nmcc_range_group.setVisible(False)
 
     def export_to_excel(self):
         """Выгрузка видимых данных таблицы в Excel"""
