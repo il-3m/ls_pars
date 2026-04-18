@@ -3185,10 +3185,9 @@ class UnifiedParserApp(QMainWindow):
         """Расчет НМЦК идеальная: взять минимальную цену среди сопоставимых контрактов из ЕИС
         
         Логика:
-        1. Берем все позиции с ценой выше минимальной по КП
-        2. Объем должен быть в диапазоне сопоставимости [target_volume / range, target_volume * range]
-        3. Находим минимальную цену среди них
-        4. Выбираем 3 позиции с наименьшей ценой из 3 разных контрактов
+        1. Объем должен быть в диапазоне сопоставимости [target_volume / range, target_volume * range]
+        2. Находим минимальную цену среди них (БЕЗ привязки к цене КП)
+        3. Выбираем 3 позиции с наименьшей ценой из 3 разных контрактов
         
         КРИТИЧЕСКИ ВАЖНО: позиции должны быть из 3 разных контрактов
         """
@@ -3200,18 +3199,6 @@ class UnifiedParserApp(QMainWindow):
                 return
             
             target_volume = float(volume_str.replace(',', '.'))
-            
-            # Получаем минимальную цену из поля ввода
-            min_price_kp_str = self.nmcc_min_price_kp_input.text().strip()
-            if not min_price_kp_str:
-                QMessageBox.warning(self, "Внимание", "Введите минимальную цену за ед. измерения по КП")
-                return
-            
-            try:
-                min_price_kp = float(min_price_kp_str.replace(',', '.'))
-            except ValueError:
-                QMessageBox.warning(self, "Внимание", "Некорректное значение цены")
-                return
             
             # Получаем диапазон сопоставимости из настроек
             try:
@@ -3231,7 +3218,7 @@ class UnifiedParserApp(QMainWindow):
             qty_col_index = FIELD_ORDER.index('qty_consumption_unit')
             
             # Собираем все видимые строки из итоговой таблицы
-            # ГРУППИРУЕМ по номерам контрактов - для каждого контракта берем лучшую позицию (мин. цену выше КП)
+            # ГРУППИРУЕМ по номерам контрактов - для каждого контракта берем лучшую позицию (мин. цену)
             contract_best_rows = {}  # reestr_number -> (row, price)
             
             for row in range(self.results_table.rowCount()):
@@ -3258,19 +3245,17 @@ class UnifiedParserApp(QMainWindow):
                     if item and item.text() and reestr_item and reestr_item.text():
                         try:
                             price = float(item.text().replace(',', '.'))
-                            # Берем только цены ВЫШЕ минимальной по КП
-                            if price <= min_price_kp:
-                                continue
                             reestr_number = reestr_item.text().strip()
                             
                             # Для каждого контракта сохраняем позицию с минимальной ценой
+                            # БЕЗ привязки к цене КП - берем все цены
                             if reestr_number not in contract_best_rows or price < contract_best_rows[reestr_number][1]:
                                 contract_best_rows[reestr_number] = (row, price)
                         except ValueError:
                             continue
             
             if len(contract_best_rows) < 3:
-                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено контрактов с ценой выше минимальной по КП и объемом в диапазоне [{min_allowed_qty:.0f}, {max_allowed_qty:.0f}]: {len(contract_best_rows)}, требуется минимум 3")
+                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено контрактов с объемом в диапазоне [{min_allowed_qty:.0f}, {max_allowed_qty:.0f}]: {len(contract_best_rows)}, требуется минимум 3")
                 return
             
             # Сортируем контракты по возрастанию цены (наименьшие цены)
