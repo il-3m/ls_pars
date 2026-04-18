@@ -1717,9 +1717,38 @@ class UnifiedParserApp(QMainWindow):
         
         try:
             from openpyxl import Workbook
+            from openpyxl.styles import Border, Side, Alignment, Font
             wb = Workbook()
             ws = wb.active
             ws.title = "НМЦК"
+            
+            # Настройка ширины колонок как в образце
+            ws.column_dimensions['A'].width = 5.66
+            ws.column_dimensions['B'].width = 36.33
+            ws.column_dimensions['C'].width = 27.22
+            ws.column_dimensions['D'].width = 13.78
+            ws.column_dimensions['E'].width = 13.89
+            ws.column_dimensions['F'].width = 29.11
+            ws.column_dimensions['G'].width = 24.78
+            
+            # Настройка высоты строки заголовков
+            ws.row_dimensions[2].height = 124.2
+            
+            # Стили границ (тонкие линии)
+            thin_border = Border(
+                left=Side(style='thin'),
+                right=Side(style='thin'),
+                top=Side(style='thin'),
+                bottom=Side(style='thin')
+            )
+            
+            # Жирный шрифт
+            bold_font = Font(bold=True)
+            bold_wrap_font = Font(bold=True)
+            
+            # Выравнивание по центру с переносом текста
+            center_align_wrap = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            wrap_align = Alignment(wrap_text=True)
             
             # Получаем значения из фильтров
             filter_mnn = self.filter_result_input.currentText().strip()
@@ -1737,11 +1766,15 @@ class UnifiedParserApp(QMainWindow):
             
             header_text = ", ".join(header_parts) if header_parts else "НМЦК"
             
-            # Строка 1: объединенная ячейка с заголовком
+            # Строка 1: объединенная ячейка с заголовком (жирный шрифт, перенос текста)
             ws.merge_cells('A1:G1')
-            ws['A1'] = header_text
+            cell = ws['A1']
+            cell.value = header_text
+            cell.font = bold_wrap_font
+            cell.alignment = wrap_align
+            cell.border = thin_border
             
-            # Строка 2: заголовки столбцов
+            # Строка 2: заголовки столбцов (жирный шрифт, выравнивание по центру, перенос текста)
             headers = [
                 '№ п/п',
                 'Наименование заказчика',
@@ -1752,7 +1785,10 @@ class UnifiedParserApp(QMainWindow):
                 'Ссылка на страницу в сети Интернет'
             ]
             for col, header in enumerate(headers, start=1):
-                ws.cell(row=2, column=col, value=header)
+                cell = ws.cell(row=2, column=col, value=header)
+                cell.font = bold_wrap_font
+                cell.alignment = center_align_wrap
+                cell.border = thin_border
             
             # Данные из таблицы
             price_col_index = FIELD_ORDER.index('price_per_unit')
@@ -1801,13 +1837,18 @@ class UnifiedParserApp(QMainWindow):
                 
                 # Заполняем строку
                 data_row = row_idx + 3
-                ws.cell(row=data_row, column=1, value=f"{row_idx + 1}.")
-                ws.cell(row=data_row, column=2, value=customer_name)
-                ws.cell(row=data_row, column=3, value=object_name)
-                ws.cell(row=data_row, column=4, value=qty)
-                ws.cell(row=data_row, column=5, value=price)
-                ws.cell(row=data_row, column=6, value=contract_info)
-                ws.cell(row=data_row, column=7, value=link)
+                ws.row_dimensions[data_row].height = 96.6 if row_idx == 0 else 69.0
+                
+                # № п/п - выравнивание по центру
+                cell = ws.cell(row=data_row, column=1, value=f"{row_idx + 1}.")
+                cell.alignment = center_align_wrap
+                cell.border = thin_border
+                
+                # Остальные ячейки с переносом текста
+                for col, value in enumerate([customer_name, object_name, qty, price, contract_info, link], start=2):
+                    cell = ws.cell(row=data_row, column=col, value=value)
+                    cell.alignment = wrap_align
+                    cell.border = thin_border
             
             # Последняя строка: Диапазон цен
             last_row = self.nmcc_table.rowCount() + 3
@@ -1819,13 +1860,19 @@ class UnifiedParserApp(QMainWindow):
             else:
                 price_range = "0.00 – 0.00"
             
-            # Объединяем ячейки для левой части
+            # Объединяем ячейки для левой части (жирный шрифт, перенос текста)
             ws.merge_cells(f'A{last_row}:E{last_row}')
-            ws.cell(row=last_row, column=1, value='Диапазон цен за единицу товара без учета НДС, рублей:')
+            cell = ws.cell(row=last_row, column=1, value='Диапазон цен за единицу товара без учета НДС, рублей:')
+            cell.font = bold_wrap_font
+            cell.alignment = wrap_align
+            cell.border = thin_border
             
-            # Правая часть с диапазоном
+            # Правая часть с диапазоном (жирный шрифт, перенос текста)
             ws.merge_cells(f'F{last_row}:G{last_row}')
-            ws.cell(row=last_row, column=6, value=price_range)
+            cell = ws.cell(row=last_row, column=6, value=price_range)
+            cell.font = bold_wrap_font
+            cell.alignment = wrap_align
+            cell.border = thin_border
             
             wb.save(file_path)
             QMessageBox.information(self, "Успех", f"Данные НМЦК сохранены в {file_path}")
@@ -2053,9 +2100,37 @@ class UnifiedParserApp(QMainWindow):
         
         try:
             from openpyxl import Workbook
+            from openpyxl.styles import Border, Side, Alignment, Font
             wb = Workbook()
             ws = wb.active
             ws.title = "НМЦК"
+            
+            # Настройка ширины колонок как в образце
+            ws.column_dimensions['A'].width = 5.66
+            ws.column_dimensions['B'].width = 36.33
+            ws.column_dimensions['C'].width = 27.22
+            ws.column_dimensions['D'].width = 13.78
+            ws.column_dimensions['E'].width = 13.89
+            ws.column_dimensions['F'].width = 29.11
+            ws.column_dimensions['G'].width = 24.78
+            
+            # Настройка высоты строки заголовков
+            ws.row_dimensions[2].height = 124.2
+            
+            # Стили границ (тонкие линии)
+            thin_border = Border(
+                left=Side(style='thin'),
+                right=Side(style='thin'),
+                top=Side(style='thin'),
+                bottom=Side(style='thin')
+            )
+            
+            # Жирный шрифт
+            bold_wrap_font = Font(bold=True)
+            
+            # Выравнивание по центру с переносом текста
+            center_align_wrap = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            wrap_align = Alignment(wrap_text=True)
             
             # Получаем значения из фильтров
             filter_mnn = self.filter_result_input.currentText().strip()
@@ -2073,11 +2148,15 @@ class UnifiedParserApp(QMainWindow):
             
             header_text = ", ".join(header_parts) if header_parts else "НМЦК"
             
-            # Строка 1: объединенная ячейка с заголовком
+            # Строка 1: объединенная ячейка с заголовком (жирный шрифт, перенос текста)
             ws.merge_cells('A1:G1')
-            ws['A1'] = header_text
+            cell = ws['A1']
+            cell.value = header_text
+            cell.font = bold_wrap_font
+            cell.alignment = wrap_align
+            cell.border = thin_border
             
-            # Строка 2: заголовки столбцов
+            # Строка 2: заголовки столбцов (жирный шрифт, выравнивание по центру, перенос текста)
             headers = [
                 '№ п/п',
                 'Наименование заказчика',
@@ -2088,7 +2167,10 @@ class UnifiedParserApp(QMainWindow):
                 'Ссылка на страницу в сети Интернет'
             ]
             for col, header in enumerate(headers, start=1):
-                ws.cell(row=2, column=col, value=header)
+                cell = ws.cell(row=2, column=col, value=header)
+                cell.font = bold_wrap_font
+                cell.alignment = center_align_wrap
+                cell.border = thin_border
             
             # Данные из таблицы
             price_col_index = FIELD_ORDER.index('price_per_unit')
@@ -2137,13 +2219,18 @@ class UnifiedParserApp(QMainWindow):
                 
                 # Заполняем строку
                 data_row = row_idx + 3
-                ws.cell(row=data_row, column=1, value=f"{row_idx + 1}.")
-                ws.cell(row=data_row, column=2, value=customer_name)
-                ws.cell(row=data_row, column=3, value=object_name)
-                ws.cell(row=data_row, column=4, value=qty)
-                ws.cell(row=data_row, column=5, value=price)
-                ws.cell(row=data_row, column=6, value=contract_info)
-                ws.cell(row=data_row, column=7, value=link)
+                ws.row_dimensions[data_row].height = 96.6 if row_idx == 0 else 69.0
+                
+                # № п/п - выравнивание по центру
+                cell = ws.cell(row=data_row, column=1, value=f"{row_idx + 1}.")
+                cell.alignment = center_align_wrap
+                cell.border = thin_border
+                
+                # Остальные ячейки с переносом текста
+                for col, value in enumerate([customer_name, object_name, qty, price, contract_info, link], start=2):
+                    cell = ws.cell(row=data_row, column=col, value=value)
+                    cell.alignment = wrap_align
+                    cell.border = thin_border
             
             # Последняя строка: Диапазон цен
             last_row = self.manual_nmcc_table.rowCount() + 3
@@ -2155,13 +2242,19 @@ class UnifiedParserApp(QMainWindow):
             else:
                 price_range = "0.00 – 0.00"
             
-            # Объединяем ячейки для левой части
+            # Объединяем ячейки для левой части (жирный шрифт, перенос текста)
             ws.merge_cells(f'A{last_row}:E{last_row}')
-            ws.cell(row=last_row, column=1, value='Диапазон цен за единицу товара без учета НДС, рублей:')
+            cell = ws.cell(row=last_row, column=1, value='Диапазон цен за единицу товара без учета НДС, рублей:')
+            cell.font = bold_wrap_font
+            cell.alignment = wrap_align
+            cell.border = thin_border
             
-            # Правая часть с диапазоном
+            # Правая часть с диапазоном (жирный шрифт, перенос текста)
             ws.merge_cells(f'F{last_row}:G{last_row}')
-            ws.cell(row=last_row, column=6, value=price_range)
+            cell = ws.cell(row=last_row, column=6, value=price_range)
+            cell.font = bold_wrap_font
+            cell.alignment = wrap_align
+            cell.border = thin_border
             
             wb.save(file_path)
             QMessageBox.information(self, "Успех", f"Данные НМЦК ручной подбор сохранены в {file_path}")
@@ -2733,6 +2826,7 @@ class UnifiedParserApp(QMainWindow):
         2. Приводим их к числу (обрабатываем запятые, пробелы как разделители тысяч)
         3. Сравниваем с целевым объемом через абсолютную разницу
         4. Выводим 3 наиболее близких значения (по возрастанию дельты)
+        5. КРИТИЧЕСКИ ВАЖНО: позиции должны быть из 3 разных контрактов
         
         Пример: при вводе 8000 из значений [1000, 2500, 5000, 8500, 10000]
         дельты: |1000-8000|=7000, |2500-8000|=5500, |5000-8000|=3000, |8500-8000|=500, |10000-8000|=2000
@@ -2747,36 +2841,50 @@ class UnifiedParserApp(QMainWindow):
             
             target_volume = float(volume_str.replace(',', '.'))
             
-            # Находим индекс колонки qty_consumption_unit
+            # Находим индекс колонки qty_consumption_unit и reestr_number
             qty_col_index = FIELD_ORDER.index('qty_consumption_unit')
+            reestr_col_index = FIELD_ORDER.index('reestr_number')
             
             # Собираем все видимые строки из итоговой таблицы с корректными числовыми значениями
-            rows_with_qty = []
+            # СРАЗУ группируем по номерам контрактов (реестровым записям)
+            contract_best_rows = {}  # reestr_number -> (row, qty, delta)
+            
             for row in range(self.results_table.rowCount()):
                 if not self.results_table.isRowHidden(row):
                     item = self.results_table.item(row, qty_col_index)
-                    if item and item.text():
+                    reestr_item = self.results_table.item(row, reestr_col_index)
+                    
+                    if item and item.text() and reestr_item and reestr_item.text():
                         try:
                             # Очищаем значение от лишних символов и приводим к float
                             qty_text = item.text().strip().replace(',', '.')
                             # Удаляем возможные пробелы как разделители тысяч (например "1 000" -> "1000")
                             qty_text = qty_text.replace(' ', '')
                             qty = float(qty_text)
-                            rows_with_qty.append((row, qty))
+                            
+                            # Пропускаем позиции с неустановленным объемом (артeфакты парсинга)
+                            if qty < 100 or qty_text.upper() == "НАИМЕНОВАНИЕ":
+                                continue
+                            
+                            reestr_number = reestr_item.text().strip()
+                            delta = abs(qty - target_volume)
+                            
+                            # Для каждого контракта сохраняем позицию с минимальной дельтой
+                            if reestr_number not in contract_best_rows or delta < contract_best_rows[reestr_number][2]:
+                                contract_best_rows[reestr_number] = (row, qty, delta)
                         except ValueError:
                             # Пропускаем строки с некорректными числовыми данными
                             continue
             
-            if len(rows_with_qty) < 3:
-                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено позиций: {len(rows_with_qty)}, требуется минимум 3")
+            if len(contract_best_rows) < 3:
+                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено контрактов с объемом: {len(contract_best_rows)}, требуется минимум 3")
                 return
             
-            # Сортируем по абсолютной дельте между объемом в таблице и целевым объемом
-            # Это обеспечивает выбор наиболее близких значений независимо от того, больше они или меньше
-            rows_with_qty.sort(key=lambda x: abs(x[1] - target_volume))
+            # Сортируем контракты по дельте (наилучшие позиции)
+            sorted_contracts = sorted(contract_best_rows.values(), key=lambda x: x[2])
             
-            # Берем 3 наиболее близких значения
-            top_3_rows = rows_with_qty[:3]
+            # Берем 3 лучших контракта (каждый с одной наилучшей позицией)
+            top_3_rows = [(r[0], r[1]) for r in sorted_contracts[:3]]  # (row_index, qty)
             
             # Заполняем таблицу НМЦК отобранными строками
             self.fill_nmcc_table(top_3_rows)
@@ -2793,14 +2901,16 @@ class UnifiedParserApp(QMainWindow):
             
             # Формируем подробное сообщение о результатах
             selected_volumes = [f"{row[1]:.2f}" for row in top_3_rows]
-            self.append_log(f"НМЦК по объему: целевой объем={target_volume}, выбрано 3 позиции: {', '.join(selected_volumes)}")
+            self.append_log(f"НМЦК по объему: целевой объем={target_volume}, выбрано 3 позиции из 3 разных контрактов: {', '.join(selected_volumes)}")
             
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка при расчете НМЦК по объему: {e}")
             logging.error(f"Ошибка calculate_nmcc_by_volume: {e}", exc_info=True)
     
     def calculate_nmcc_by_avg_price(self):
-        """Расчет НМЦК приближенный к КП: найти 3 позиции со средней ценой, наиболее близкой к средней по введенным КП"""
+        """Расчет НМЦК приближенный к КП: найти 3 позиции со средней ценой, наиболее близкой к средней по введенным КП
+        КРИТИЧЕСКИ ВАЖНО: позиции должны быть из 3 разных контрактов
+        """
         try:
             # Получаем цены из полей ввода
             prices = []
@@ -2819,30 +2929,40 @@ class UnifiedParserApp(QMainWindow):
             # Вычисляем среднюю арифметическую по введенным КП
             avg_price_kp = sum(prices) / len(prices)
             
-            # Находим индекс колонки price_per_unit
+            # Находим индекс колонки price_per_unit и reestr_number
             price_col_index = FIELD_ORDER.index('price_per_unit')
+            reestr_col_index = FIELD_ORDER.index('reestr_number')
             
             # Собираем все видимые строки из итоговой таблицы
-            rows_with_price = []
+            # ГРУППИРУЕМ по номерам контрактов - для каждого контракта берем лучшую позицию
+            contract_best_rows = {}  # reestr_number -> (row, price, delta)
+            
             for row in range(self.results_table.rowCount()):
                 if not self.results_table.isRowHidden(row):
                     item = self.results_table.item(row, price_col_index)
-                    if item and item.text():
+                    reestr_item = self.results_table.item(row, reestr_col_index)
+                    
+                    if item and item.text() and reestr_item and reestr_item.text():
                         try:
                             price = float(item.text().replace(',', '.'))
-                            rows_with_price.append((row, price))
+                            reestr_number = reestr_item.text().strip()
+                            delta = abs(price - avg_price_kp)
+                            
+                            # Для каждого контракта сохраняем позицию с минимальной дельтой
+                            if reestr_number not in contract_best_rows or delta < contract_best_rows[reestr_number][2]:
+                                contract_best_rows[reestr_number] = (row, price, delta)
                         except ValueError:
                             continue
             
-            if len(rows_with_price) < 3:
-                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено позиций: {len(rows_with_price)}, требуется минимум 3")
+            if len(contract_best_rows) < 3:
+                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено контрактов с ценой: {len(contract_best_rows)}, требуется минимум 3")
                 return
             
-            # Сортируем по дельте (разнице) между ценой в таблице и средней ценой КП
-            rows_with_price.sort(key=lambda x: abs(x[1] - avg_price_kp))
+            # Сортируем контракты по дельте (наилучшие позиции)
+            sorted_contracts = sorted(contract_best_rows.values(), key=lambda x: x[2])
             
-            # Берем 3 наиболее близких
-            top_3_rows = rows_with_price[:3]
+            # Берем 3 лучших контракта (каждый с одной наилучшей позицией)
+            top_3_rows = [(r[0], r[1]) for r in sorted_contracts[:3]]  # (row_index, price)
             
             # Заполняем таблицу НМЦК
             self.fill_nmcc_table(top_3_rows)
@@ -2857,39 +2977,50 @@ class UnifiedParserApp(QMainWindow):
             # Переключаемся на вкладку НМЦК
             self.tables_tab_widget.setCurrentIndex(1)
             
-            self.append_log(f"НМЦК по средней цене КП: средняя цена={avg_price_kp:.2f}₽, выбрано 3 позиции")
+            self.append_log(f"НМЦК по средней цене КП: средняя цена={avg_price_kp:.2f}₽, выбрано 3 позиции из 3 разных контрактов")
             
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка при расчете НМЦК по средней цене: {e}")
             logging.error(f"Ошибка calculate_nmcc_by_avg_price: {e}", exc_info=True)
     
     def calculate_nmcc_by_min_price(self):
-        """Расчет НМЦК по минимальной цене: найти 3 позиции с наименьшей ценой"""
+        """Расчет НМЦК по минимальной цене: найти 3 позиции с наименьшей ценой
+        КРИТИЧЕСКИ ВАЖНО: позиции должны быть из 3 разных контрактов
+        """
         try:
-            # Находим индекс колонки price_per_unit
+            # Находим индекс колонки price_per_unit и reestr_number
             price_col_index = FIELD_ORDER.index('price_per_unit')
+            reestr_col_index = FIELD_ORDER.index('reestr_number')
             
             # Собираем все видимые строки из итоговой таблицы
-            rows_with_price = []
+            # ГРУППИРУЕМ по номерам контрактов - для каждого контракта берем лучшую позицию (мин. цену)
+            contract_best_rows = {}  # reestr_number -> (row, price)
+            
             for row in range(self.results_table.rowCount()):
                 if not self.results_table.isRowHidden(row):
                     item = self.results_table.item(row, price_col_index)
-                    if item and item.text():
+                    reestr_item = self.results_table.item(row, reestr_col_index)
+                    
+                    if item and item.text() and reestr_item and reestr_item.text():
                         try:
                             price = float(item.text().replace(',', '.'))
-                            rows_with_price.append((row, price))
+                            reestr_number = reestr_item.text().strip()
+                            
+                            # Для каждого контракта сохраняем позицию с минимальной ценой
+                            if reestr_number not in contract_best_rows or price < contract_best_rows[reestr_number][1]:
+                                contract_best_rows[reestr_number] = (row, price)
                         except ValueError:
                             continue
             
-            if len(rows_with_price) < 3:
-                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено позиций: {len(rows_with_price)}, требуется минимум 3")
+            if len(contract_best_rows) < 3:
+                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено контрактов с ценой: {len(contract_best_rows)}, требуется минимум 3")
                 return
             
-            # Сортируем по возрастанию цены
-            rows_with_price.sort(key=lambda x: x[1])
+            # Сортируем контракты по возрастанию цены (наименьшие цены)
+            sorted_contracts = sorted(contract_best_rows.values(), key=lambda x: x[1])
             
-            # Берем 3 позиции с наименьшей ценой
-            top_3_rows = rows_with_price[:3]
+            # Берем 3 позиции с наименьшей ценой (из 3 разных контрактов)
+            top_3_rows = [(r[0], r[1]) for r in sorted_contracts[:3]]  # (row_index, price)
             
             # Заполняем таблицу НМЦК
             self.fill_nmcc_table(top_3_rows)
@@ -2905,7 +3036,7 @@ class UnifiedParserApp(QMainWindow):
             self.tables_tab_widget.setCurrentIndex(1)
             
             selected_prices = [f"{row[1]:.2f}₽" for row in top_3_rows]
-            self.append_log(f"НМЦК минимальная: выбрано 3 позиции с наименьшей ценой: {', '.join(selected_prices)}")
+            self.append_log(f"НМЦК минимальная: выбрано 3 позиции из 3 разных контрактов с наименьшей ценой: {', '.join(selected_prices)}")
             
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка при расчете НМЦК по минимальной цене: {e}")
@@ -2918,12 +3049,14 @@ class UnifiedParserApp(QMainWindow):
         1. В приоритете 'вписаться в цену' - средняя цена ЕИС должна быть >= средней цены КП
         2. Не допускать значительного разброса по объему (макс. отклонение <= 50%)
         3. Использовать комбинированный скоринг для баланса между ценой и объемом
+        4. КРИТИЧЕСКИ ВАЖНО: позиции должны быть из 3 разных контрактов
         
         Алгоритм:
         - Для каждой позиции вычисляем скоринг на основе:
           * Ценовой фактор: насколько цена близка к целевой (с бонусом за EIS >= KP)
           * Объемный фактор: насколько объем близок к целевому (с штрафом за >50% отклонение)
-        - Отбираем 3 позиции с наилучшим综合ным скорингом
+        - ГРУППИРУЕМ по контрактам - для каждого контракта берем лучшую позицию
+        - Отбираем 3 позиции с наилучшим综合ным скорингом из 3 разных контрактов
         """
         try:
             # Получаем целевые значения
@@ -2952,64 +3085,71 @@ class UnifiedParserApp(QMainWindow):
             # Находим индексы колонок
             price_col_index = FIELD_ORDER.index('price_per_unit')
             qty_col_index = FIELD_ORDER.index('qty_consumption_unit')
+            reestr_col_index = FIELD_ORDER.index('reestr_number')
             
             # Собираем все видимые строки с данными о цене и объеме
-            rows_with_data = []
+            # ГРУППИРУЕМ по номерам контрактов - для каждого контракта берем лучшую позицию
+            contract_best_rows = {}  # reestr_number -> (row, price, qty, score)
+            
             for row in range(self.results_table.rowCount()):
                 if not self.results_table.isRowHidden(row):
                     price_item = self.results_table.item(row, price_col_index)
                     qty_item = self.results_table.item(row, qty_col_index)
+                    reestr_item = self.results_table.item(row, reestr_col_index)
                     
-                    if price_item and price_item.text() and qty_item and qty_item.text():
+                    if price_item and price_item.text() and qty_item and qty_item.text() and reestr_item and reestr_item.text():
                         try:
                             price = float(price_item.text().replace(',', '.'))
                             qty_text = qty_item.text().strip().replace(',', '.').replace(' ', '')
                             qty = float(qty_text)
-                            rows_with_data.append((row, price, qty))
+                            
+                            # Пропускаем позиции с неустановленным объемом (артeфакты парсинга)
+                            if qty < 100 or qty_text.upper() == "НАИМЕНОВАНИЕ":
+                                continue
+                            
+                            reestr_number = reestr_item.text().strip()
+                            
+                            # Вычисляем скоринг для этой позиции
+                            # 1. Ценовой скоринг (0-100 баллов)
+                            price_delta = abs(price - avg_price_kp)
+                            price_diff_score = max(0, 100 - (price_delta / max(avg_price_kp, 0.01)) * 100)
+                            
+                            # Бонус за EIS >= KP (вписаться в цену)
+                            if price >= avg_price_kp:
+                                price_bonus = 50
+                            else:
+                                price_bonus = 0
+                            
+                            price_score = price_diff_score + price_bonus
+                            
+                            # 2. Объемный скоринг (0-100 баллов)
+                            volume_delta = abs(qty - target_volume)
+                            volume_diff_percent = (volume_delta / max(target_volume, 0.01)) * 100
+                            
+                            # Штраф за превышение 50% отклонения
+                            if volume_diff_percent <= 50:
+                                volume_score = 100 - volume_diff_percent
+                            else:
+                                volume_score = max(0, 100 - volume_diff_percent * 2)
+                            
+                            # 3. Комбинированный скоринг
+                            combined_score = price_score * 0.6 + volume_score * 0.4
+                            
+                            # Для каждого контракта сохраняем позицию с наилучшим скорингом
+                            if reestr_number not in contract_best_rows or combined_score > contract_best_rows[reestr_number][3]:
+                                contract_best_rows[reestr_number] = (row, price, qty, combined_score)
                         except ValueError:
                             continue
             
-            if len(rows_with_data) < 3:
-                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено позиций: {len(rows_with_data)}, требуется минимум 3")
+            if len(contract_best_rows) < 3:
+                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено контрактов с данными: {len(contract_best_rows)}, требуется минимум 3")
                 return
             
-            # Вычисляем скоринг для каждой позиции
-            scored_rows = []
-            for row_idx, price, qty in rows_with_data:
-                # 1. Ценовой скоринг (0-100 баллов)
-                # Базовый скоринг: обратная пропорциональность дельте цены
-                price_delta = abs(price - avg_price_kp)
-                price_diff_score = max(0, 100 - (price_delta / max(avg_price_kp, 0.01)) * 100)
-                
-                # Бонус за EIS >= KP (вписаться в цену)
-                if price >= avg_price_kp:
-                    price_bonus = 50  # Дополнительный бонус за выполнение приоритета
-                else:
-                    price_bonus = 0
-                
-                price_score = price_diff_score + price_bonus
-                
-                # 2. Объемный скоринг (0-100 баллов)
-                volume_delta = abs(qty - target_volume)
-                volume_diff_percent = (volume_delta / max(target_volume, 0.01)) * 100
-                
-                # Штраф за превышение 50% отклонения
-                if volume_diff_percent <= 50:
-                    volume_score = 100 - volume_diff_percent  # 50-100 баллов при отклонении 0-50%
-                else:
-                    volume_score = max(0, 100 - volume_diff_percent * 2)  # Агрессивный штраф за >50%
-                
-                # 3. Комбинированный скоринг
-                # Приоритет цены (60%) над объемом (40%) для выполнения требования "вписаться в цену"
-                combined_score = price_score * 0.6 + volume_score * 0.4
-                
-                scored_rows.append((row_idx, price, qty, combined_score, price_score, volume_score))
+            # Сортируем контракты по комбинированному скорингу (по убыванию)
+            sorted_contracts = sorted(contract_best_rows.values(), key=lambda x: x[3], reverse=True)
             
-            # Сортируем по комбинированному скорингу (по убыванию)
-            scored_rows.sort(key=lambda x: x[3], reverse=True)
-            
-            # Берем 3 позиции с наилучшим скорингом
-            top_3_rows = [(r[0], r[1]) for r in scored_rows[:3]]  # (row_index, price) для fill_nmcc_table
+            # Берем 3 позиции с наилучшим скорингом (из 3 разных контрактов)
+            top_3_rows = [(r[0], r[1]) for r in sorted_contracts[:3]]  # (row_index, price)
             
             # Заполняем таблицу НМЦК
             self.fill_nmcc_table(top_3_rows)
@@ -3026,9 +3166,9 @@ class UnifiedParserApp(QMainWindow):
             
             # Формируем подробное сообщение о результатах
             selected_info = [f"цена={r[1]:.2f}₽, объем={r[2]:.2f}, скор={r[3]:.1f}" 
-                          for r in scored_rows[:3]]
+                          for r in sorted_contracts[:3]]
             self.append_log(f"НМЦК Оптимальный: средняя цена КП={avg_price_kp:.2f}₽, целевой объем={target_volume}")
-            self.append_log(f"Выбрано 3 позиции: {'; '.join(selected_info)}")
+            self.append_log(f"Выбрано 3 позиции из 3 разных контрактов: {'; '.join(selected_info)}")
             
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка при оптимальном расчете НМЦК: {e}")
