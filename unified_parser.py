@@ -988,6 +988,20 @@ class UnifiedParserApp(QMainWindow):
         timing_group.setLayout(timing_layout)
         settings_tab_layout.addWidget(timing_group)
 
+        # Настройки диапазона сопоставимости для НМЦК
+        nmcc_range_group = QGroupBox("Диапазон сопоставимости для НМЦК")
+        nmcc_range_layout = QFormLayout()
+        nmcc_range_layout.setSpacing(6)
+        
+        self.nmcc_volume_range_input = QLineEdit()
+        self.nmcc_volume_range_input.setText("3")
+        self.nmcc_volume_range_input.setToolTip("Максимальное отклонение по объему в разах (например, 3 означает диапазон [объем/3, объем*3])")
+        
+        nmcc_range_layout.addRow("Макс. отклонение по объему (в разах):", self.nmcc_volume_range_input)
+        
+        nmcc_range_group.setLayout(nmcc_range_layout)
+        settings_tab_layout.addWidget(nmcc_range_group)
+
         # Пути к файлам
         paths_group = QGroupBox("Пути к файлам")
         paths_layout = QFormLayout()
@@ -1197,7 +1211,7 @@ class UnifiedParserApp(QMainWindow):
         self.nmcc_optimal_btn = QPushButton("НМЦК оптимальная")
         self.nmcc_optimal_btn.setToolTip(
             "Оптимальный алгоритм:\n"
-            "1. Сопоставимый объем закупки (отклонение не более чем в 2-3 раза)\n"
+            "1. Сопоставимый объем закупки (отклонение настраивается в настройках)\n"
             "2. Цена выше, чем минимальное по КП\n"
             "3. Баланс между ценой и объемом для наилучшего соответствия"
         )
@@ -1205,7 +1219,7 @@ class UnifiedParserApp(QMainWindow):
         
         # Новая кнопка "НМЦК идеальная"
         self.nmcc_ideal_btn = QPushButton("НМЦК идеальная")
-        self.nmcc_ideal_btn.setToolTip("Взять минимальную цену среди сопоставимых контрактов из ЕИС")
+        self.nmcc_ideal_btn.setToolTip("Взять минимальную цену среди сопоставимых контрактов из ЕИС с учетом диапазона объема")
         buttons_layout.addWidget(self.nmcc_ideal_btn)
         
         # Кнопки справа: Скачать Excel, Скопировать
@@ -3031,7 +3045,8 @@ class UnifiedParserApp(QMainWindow):
         """Оптимальный алгоритм расчета НМЦК:
         
         Логика:
-        1. Сопоставимый объем закупки (отклонение не более чем в 2-3 раза)
+        1. Сопоставимый объем закупки (отклонение не более чем в N раз, где N настраивается в настройках)
+           Диапазон: [target_volume / range, target_volume * range]
         2. Цена выше, чем минимальное по КП
         3. Баланс между ценой и объемом для наилучшего соответствия
         4. КРИТИЧЕСКИ ВАЖНО: позиции должны быть из 3 разных контрактов
@@ -3039,7 +3054,7 @@ class UnifiedParserApp(QMainWindow):
         Алгоритм:
         - Для каждой позиции вычисляем скоринг на основе:
           * Ценовой фактор: цена должна быть выше минимальной по КП
-          * Объемный фактор: отклонение объема не более чем в 2-3 раза от целевого
+          * Объемный фактор: отклонение объема не более чем в N раз от целевого
         - ГРУППИРУЕМ по контрактам - для каждого контракта берем лучшую позицию
         - Отбираем 3 позиции с наилучшим综合ным скорингом из 3 разных контрактов
         """
@@ -3063,6 +3078,14 @@ class UnifiedParserApp(QMainWindow):
             except ValueError:
                 QMessageBox.warning(self, "Внимание", "Некорректное значение цены")
                 return
+            
+            # Получаем диапазон сопоставимости из настроек
+            try:
+                volume_range = float(self.nmcc_volume_range_input.text().strip().replace(',', '.'))
+                if volume_range < 1:
+                    volume_range = 3.0  # Значение по умолчанию
+            except (ValueError, AttributeError):
+                volume_range = 3.0  # Значение по умолчанию
             
             # Находим индексы колонок
             price_col_index = FIELD_ORDER.index('price_per_unit')
@@ -3095,17 +3118,20 @@ class UnifiedParserApp(QMainWindow):
                             
                             reestr_number = reestr_item.text().strip()
                             
+                            # Проверяем, попадает ли объем в диапазон сопоставимости
+                            # Диапазон: [target_volume / volume_range, target_volume * volume_range]
+                            min_allowed_qty = target_volume / volume_range
+                            max_allowed_qty = target_volume * volume_range
+                            
+                            if qty < min_allowed_qty or qty > max_allowed_qty:
+                                # Объем вне диапазона сопоставимости - пропускаем
+                                continue
+                            
                             # Вычисляем скоринг для этой позиции
                             # 1. Объемный скоринг (0-100 баллов)
-                            # Отклонение не более чем в 2-3 раза (т.е. объем должен быть в диапазоне [target/3, target*3])
-                            volume_ratio = qty / max(target_volume, 0.01)
-                            if 0.33 <= volume_ratio <= 3.0:
-                                # В допустимом диапазоне - считаем процент отклонения от идеала (1.0)
-                                volume_diff_percent = abs(1.0 - volume_ratio) * 100
-                                volume_score = max(0, 100 - volume_diff_percent)
-                            else:
-                                # Вне диапазона - большой штраф
-                                volume_score = max(0, 50 - abs(volume_ratio - 1.67) * 20)
+                            # Чем ближе к целевому объему, тем лучше
+                            volume_diff_percent = abs(qty - target_volume) / max(target_volume, 0.01) * 100
+                            volume_score = max(0, 100 - volume_diff_percent)
                             
                             # 2. Ценовой скоринг (0-100 баллов) - бонус за цену выше минимальной по КП
                             price_bonus = min(100, (price - min_price_kp) / max(min_price_kp, 0.01) * 50)
@@ -3120,7 +3146,7 @@ class UnifiedParserApp(QMainWindow):
                             continue
             
             if len(contract_best_rows) < 3:
-                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено контрактов с данными: {len(contract_best_rows)}, требуется минимум 3")
+                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено контрактов с данными в диапазоне [{min_allowed_qty:.0f}, {max_allowed_qty:.0f}]: {len(contract_best_rows)}, требуется минимум 3")
                 return
             
             # Сортируем контракты по комбинированному скорингу (по убыванию)
@@ -3146,7 +3172,7 @@ class UnifiedParserApp(QMainWindow):
             # Формируем подробное сообщение о результатах
             selected_info = [f"цена={r[1]:.2f}₽, объем={r[2]:.2f}, скор={r[3]:.1f}" 
                           for r in sorted_contracts[:3]]
-            self.append_log(f"НМЦК Оптимальная: минимальная цена КП={min_price_kp:.2f}₽, целевой объем={target_volume}")
+            self.append_log(f"НМЦК Оптимальная: минимальная цена КП={min_price_kp:.2f}₽, целевой объем={target_volume}, диапазон=[{min_allowed_qty:.0f}, {max_allowed_qty:.0f}]")
             self.append_log(f"Выбрано 3 позиции из 3 разных контрактов: {'; '.join(selected_info)}")
             
         except Exception as e:
@@ -3158,12 +3184,21 @@ class UnifiedParserApp(QMainWindow):
         
         Логика:
         1. Берем все позиции с ценой выше минимальной по КП
-        2. Находим минимальную цену среди них
-        3. Выбираем 3 позиции с наименьшей ценой из 3 разных контрактов
+        2. Объем должен быть в диапазоне сопоставимости [target_volume / range, target_volume * range]
+        3. Находим минимальную цену среди них
+        4. Выбираем 3 позиции с наименьшей ценой из 3 разных контрактов
         
         КРИТИЧЕСКИ ВАЖНО: позиции должны быть из 3 разных контрактов
         """
         try:
+            # Получаем целевой объем
+            volume_str = self.nmcc_volume_input.text().strip()
+            if not volume_str:
+                QMessageBox.warning(self, "Внимание", "Введите объем в ед. измерения для расчета идеальной НМЦК")
+                return
+            
+            target_volume = float(volume_str.replace(',', '.'))
+            
             # Получаем минимальную цену из поля ввода
             min_price_kp_str = self.nmcc_min_price_kp_input.text().strip()
             if not min_price_kp_str:
@@ -3176,9 +3211,22 @@ class UnifiedParserApp(QMainWindow):
                 QMessageBox.warning(self, "Внимание", "Некорректное значение цены")
                 return
             
-            # Находим индекс колонки price_per_unit и reestr_number
+            # Получаем диапазон сопоставимости из настроек
+            try:
+                volume_range = float(self.nmcc_volume_range_input.text().strip().replace(',', '.'))
+                if volume_range < 1:
+                    volume_range = 3.0  # Значение по умолчанию
+            except (ValueError, AttributeError):
+                volume_range = 3.0  # Значение по умолчанию
+            
+            # Вычисляем диапазон допустимых объемов
+            min_allowed_qty = target_volume / volume_range
+            max_allowed_qty = target_volume * volume_range
+            
+            # Находим индекс колонки price_per_unit, reestr_number и qty_consumption_unit
             price_col_index = FIELD_ORDER.index('price_per_unit')
             reestr_col_index = FIELD_ORDER.index('reestr_number')
+            qty_col_index = FIELD_ORDER.index('qty_consumption_unit')
             
             # Собираем все видимые строки из итоговой таблицы
             # ГРУППИРУЕМ по номерам контрактов - для каждого контракта берем лучшую позицию (мин. цену выше КП)
@@ -3188,6 +3236,22 @@ class UnifiedParserApp(QMainWindow):
                 if not self.results_table.isRowHidden(row):
                     item = self.results_table.item(row, price_col_index)
                     reestr_item = self.results_table.item(row, reestr_col_index)
+                    qty_item = self.results_table.item(row, qty_col_index)
+                    
+                    # Проверяем объем - должен быть в диапазоне сопоставимости
+                    if qty_item and qty_item.text():
+                        try:
+                            qty_text = qty_item.text().strip().replace(',', '.').replace(' ', '')
+                            qty = float(qty_text)
+                            # Пропускаем позиции с неустановленным объемом (артeфакты парсинга)
+                            if qty < 100 or qty_text.upper() == "НАИМЕНОВАНИЕ":
+                                continue
+                            # Проверяем, попадает ли объем в диапазон сопоставимости
+                            if qty < min_allowed_qty or qty > max_allowed_qty:
+                                # Объем вне диапазона сопоставимости - пропускаем
+                                continue
+                        except ValueError:
+                            continue
                     
                     if item and item.text() and reestr_item and reestr_item.text():
                         try:
@@ -3204,7 +3268,7 @@ class UnifiedParserApp(QMainWindow):
                             continue
             
             if len(contract_best_rows) < 3:
-                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено контрактов с ценой выше минимальной по КП: {len(contract_best_rows)}, требуется минимум 3")
+                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено контрактов с ценой выше минимальной по КП и объемом в диапазоне [{min_allowed_qty:.0f}, {max_allowed_qty:.0f}]: {len(contract_best_rows)}, требуется минимум 3")
                 return
             
             # Сортируем контракты по возрастанию цены (наименьшие цены)
@@ -3228,7 +3292,7 @@ class UnifiedParserApp(QMainWindow):
             self.tables_tab_widget.setCurrentIndex(1)
             
             selected_prices = [f"{row[1]:.2f}₽" for row in top_3_rows]
-            self.append_log(f"НМЦК идеальная: выбрана минимальная цена среди сопоставимых контрактов из 3 разных контрактов: {', '.join(selected_prices)}")
+            self.append_log(f"НМЦК идеальная: выбрана минимальная цена среди сопоставимых контрактов из 3 разных контрактов, диапазон=[{min_allowed_qty:.0f}, {max_allowed_qty:.0f}]: {', '.join(selected_prices)}")
             
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Ошибка при расчете НМЦК идеальная: {e}")
