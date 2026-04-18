@@ -1604,9 +1604,7 @@ class UnifiedParserApp(QMainWindow):
             self.filter_before_search = ""
             
             # Очищаем поля ввода НМЦК (синхронизируется между вкладками)
-            self.nmcc_price1_input.clear()
-            self.nmcc_price2_input.clear()
-            self.nmcc_price3_input.clear()
+            self.nmcc_min_price_kp_input.clear()
             self.nmcc_volume_input.clear()
             
             # Сбрасываем итоговые данные
@@ -1626,6 +1624,10 @@ class UnifiedParserApp(QMainWindow):
             self.manual_nmcc_avg_eis_label.setText("0.00")
             self.manual_nmcc_price_delta_label.setText("0.00 (0.00%)")
             self.manual_nmcc_max_deviation_label.setText("0.00 (0.00%)")
+            
+            # Очищаем поля ввода НМЦК ручного подбора
+            self.manual_nmcc_min_price_kp_input.clear()
+            self.manual_nmcc_volume_input.clear()
             
             # Сбрасываем поля "Поисковый запрос" и фильтры
             self.search_input.setCurrentText("")
