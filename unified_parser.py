@@ -2929,9 +2929,10 @@ class UnifiedParserApp(QMainWindow):
             # Вычисляем среднюю арифметическую по введенным КП
             avg_price_kp = sum(prices) / len(prices)
             
-            # Находим индекс колонки price_per_unit и reestr_number
+            # Находим индекс колонки price_per_unit, reestr_number и qty_consumption_unit
             price_col_index = FIELD_ORDER.index('price_per_unit')
             reestr_col_index = FIELD_ORDER.index('reestr_number')
+            qty_col_index = FIELD_ORDER.index('qty_consumption_unit')
             
             # Собираем все видимые строки из итоговой таблицы
             # ГРУППИРУЕМ по номерам контрактов - для каждого контракта берем лучшую позицию
@@ -2941,6 +2942,20 @@ class UnifiedParserApp(QMainWindow):
                 if not self.results_table.isRowHidden(row):
                     item = self.results_table.item(row, price_col_index)
                     reestr_item = self.results_table.item(row, reestr_col_index)
+                    qty_item = self.results_table.item(row, qty_col_index)
+                    
+                    # Пропускаем позиции без объема (требование 2)
+                    if not qty_item or not qty_item.text():
+                        continue
+                    qty_text = qty_item.text().strip()
+                    if not qty_text or qty_text.upper() == "НАИМЕНОВАНИЕ":
+                        continue
+                    try:
+                        qty_val = float(qty_text.replace(',', '.').replace(' ', ''))
+                        if qty_val < 100:  # Артефакт парсинга
+                            continue
+                    except ValueError:
+                        continue
                     
                     if item and item.text() and reestr_item and reestr_item.text():
                         try:
@@ -2955,7 +2970,7 @@ class UnifiedParserApp(QMainWindow):
                             continue
             
             if len(contract_best_rows) < 3:
-                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено контрактов с ценой: {len(contract_best_rows)}, требуется минимум 3")
+                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено контрактов с ценой и объемом: {len(contract_best_rows)}, требуется минимум 3")
                 return
             
             # Сортируем контракты по дельте (наилучшие позиции)
@@ -3202,9 +3217,16 @@ class UnifiedParserApp(QMainWindow):
             
             # Проверяем, что объем не пустой и не содержит только пробелы
             qty_text = qty_item.text().strip()
-            if not qty_text or qty_text.upper() == "НАИМЕНОВАНИЕ" or qty_text.isdigit() and int(qty_text) < 100:
-                # Дополнительная проверка на артефакты парсинга
-                pass
+            if not qty_text or qty_text.upper() == "НАИМЕНОВАНИЕ":
+                continue
+            
+            # Проверка на артефакты парсинга (объем < 100)
+            try:
+                qty_val = float(qty_text.replace(',', '.').replace(' ', ''))
+                if qty_val < 100:
+                    continue  # Пропускаем артефакты
+            except ValueError:
+                continue  # Пропускаем если не удалось преобразовать
             
             new_row = self.nmcc_table.rowCount()
             self.nmcc_table.insertRow(new_row)
