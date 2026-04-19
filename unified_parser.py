@@ -2995,8 +2995,7 @@ class UnifiedParserApp(QMainWindow):
                     value_item.setFlags(value_item.flags() & ~Qt.ItemIsEditable)
                     # Разрешаем выделение и копирование текста
                     value_item.setFlags(value_item.flags() | Qt.ItemIsSelectable)
-                    # Отключаем обрезку текста для полного отображения
-                    value_item.setFlags(value_item.flags() & ~Qt.ItemIsTruncated)
+                    # Отключаем обрезку текста для полного отображения (через setTextElideMode у таблицы)
                 details_table.setItem(row_num, 1, value_item)
                 
                 # Увеличиваем высоту строки для лучшего отображения длинного текста
