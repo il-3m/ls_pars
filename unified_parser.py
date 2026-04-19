@@ -1643,6 +1643,67 @@ class UnifiedParserApp(QMainWindow):
             self.status_label.setText("Данные сброшены")
             self.append_log("=== ДАННЫЕ СБРОШЕНЫ ПОЛЬЗОВАТЕЛЕМ ===")
 
+    def reset_data_silent(self):
+        """Сброс всех данных из таблицы без подтверждения (для использования после загрузки БД)"""
+        # Очищаем таблицу
+        self.results_table.setRowCount(0)
+        # Очищаем таблицу НМЦК
+        self.nmcc_table.setRowCount(0)
+        # Очищаем таблицу НМЦК ручной подбор
+        self.manual_nmcc_table.setRowCount(0)
+        # Очищаем список ссылок
+        self.links_list.clear()
+        # Очищаем лог
+        self.log_text.clear()
+        # Сбрасываем счетчики
+        self.total_links_label.setText("Ссылок отработано: 0")
+        self.filtered_count_label.setText("Отфильтровано позиций: 0")
+        self.contracts_selected_label.setText("Контрактов отобрано: 0")
+        # Очищаем прогресс бар
+        self.progress_bar.setValue(0)
+        # Очищаем внутренний список данных
+        self.all_rows = []
+        # Сбрасываем фильтр
+        self.filter_before_search = ""
+        
+        # Очищаем поля ввода НМЦК (синхронизируется между вкладками)
+        self.nmcc_min_price_kp_input.clear()
+        self.nmcc_volume_input.clear()
+        
+        # Сбрасываем итоговые данные
+        self.nmcc_min_kp_label.setText("0.00")
+        self.nmcc_min_eis_label.setText("0.00")
+        self.nmcc_price_delta_label.setText("0.00 (0.00%)")
+        self.nmcc_max_deviation_label.setText("0.00 (0.00%)")
+        
+        # Сбрасываем индикацию кнопок НМЦК
+        self.nmcc_volume_btn.setStyleSheet("")
+        self.nmcc_min_btn.setStyleSheet("")
+        self.nmcc_avg_btn.setStyleSheet("")
+        self.nmcc_optimal_btn.setStyleSheet("")
+        self.nmcc_ideal_btn.setStyleSheet("")
+        
+        # Сбрасываем итоговые данные вкладки "НМЦК ручной подбор"
+        self.manual_nmcc_min_kp_label.setText("0.00")
+        self.manual_nmcc_min_eis_label.setText("0.00")
+        self.manual_nmcc_price_delta_label.setText("0.00 (0.00%)")
+        self.manual_nmcc_max_deviation_label.setText("0.00 (0.00%)")
+        
+        # Очищаем поля ввода НМЦК ручного подбора
+        self.manual_nmcc_min_price_kp_input.clear()
+        self.manual_nmcc_volume_input.clear()
+        
+        # Сбрасываем поля "Поисковый запрос" и фильтры
+        self.search_input.setCurrentText("")
+        self.filter_result_input.setCurrentText("")
+        self.filter_form_input.setCurrentText("")
+        self.filter_dose_input.setCurrentText("")
+        
+        # НЕ очищаем базу данных (reference_data остается загруженной)
+        # Обновляем статус
+        self.status_label.setText("Данные сброшены")
+        self.append_log("=== ДАННЫЕ СБРОШЕНЫ (АВТОМАТИЧЕСКИ ПОСЛЕ ЗАГРУЗКИ БД) ===")
+
     def enter_secret_code(self):
         """Ввод секретного кода для отображения скрытых настроек парсинга"""
         code, ok = QInputDialog.getText(
@@ -1836,14 +1897,56 @@ class UnifiedParserApp(QMainWindow):
                 QMessageBox.warning(self, "Внимание", "Файл не содержит данных или заголовков")
                 return
             
-            # Заполняем данными
+            # Заполняем данными с применением подсветки и кликабельных ссылок как при парсинге
+            pale_yellow = QColor(255, 255, 200)
+            
             for row_data in data_rows:
                 row_position = self.results_table.rowCount()
                 self.results_table.insertRow(row_position)
-                for col_idx, value in enumerate(row_data):
-                    if col_idx < len(header_row):
+                
+                # Создаем словарь данных для этой строки
+                row_data_dict = {}
+                for col_idx, header_name in enumerate(header_row):
+                    if col_idx < len(FIELD_ORDER):
+                        row_data_dict[FIELD_ORDER[col_idx]] = row_data[col_idx] if col_idx < len(row_data) else ""
+                
+                # Проверяем объем - определяем, есть ли у позиции корректный объем
+                qty_value = row_data_dict.get('qty_consumption_unit', '')
+                has_volume = False
+                if qty_value:
+                    qty_text = str(qty_value).strip()
+                    if qty_text and qty_text.upper() != "НАИМЕНОВАНИЕ":
+                        try:
+                            qty_val = float(qty_text.replace(',', '.').replace(' ', ''))
+                            if qty_val > 0:  # Любое положительное значение считается объемом
+                                has_volume = True
+                        except ValueError:
+                            pass
+                
+                for col_idx, field_name in enumerate(FIELD_ORDER):
+                    value = row_data_dict.get(field_name, "")
+                    
+                    # Для колонки contract_link создаем кликабельную ссылку
+                    if field_name == 'contract_link' and value:
                         item = QTableWidgetItem(value)
-                        self.results_table.setItem(row_position, col_idx, item)
+                        item.setFlags(item.flags() & ~Qt.ItemIsEditable)  # Только для чтения
+                        # Делаем текст синим и подчеркнутым как hyperlink
+                        font = item.font()
+                        font.setUnderline(True)
+                        font.setBold(True)
+                        item.setFont(font)
+                        item.setForeground(Qt.blue)
+                        # Сохраняем URL в data role для открытия
+                        item.setData(Qt.UserRole, value)
+                    else:
+                        item = QTableWidgetItem(str(value) if value else "")
+                        item.setFlags(item.flags() & ~Qt.ItemIsEditable)  # Только для чтения
+                    
+                    # Подсвечиваем всю строку бледно-желтым цветом, если нет объема
+                    if not has_volume:
+                        item.setBackground(pale_yellow)
+                    
+                    self.results_table.setItem(row_position, col_idx, item)
             
             # Не меняем ширину колонок - оставляем фиксированную ширину 150px как при парсинге
             # self.results_table.resizeColumnsToContents()  # Убрано для сохранения фиксированной ширины
@@ -3884,7 +3987,8 @@ class UnifiedParserApp(QMainWindow):
         """Открытие модального окна с аналитикой по цене"""
         dialog = QDialog(self)
         dialog.setWindowTitle("Аналитика по цене")
-        dialog.setMinimumSize(800, 600)
+        # Увеличена высота на 20%: было 600, стало 720 (уже изменено ранее)
+        dialog.setMinimumSize(800, 864)
         
         layout = QVBoxLayout()
         layout.setContentsMargins(20, 20, 20, 20)
@@ -4421,6 +4525,9 @@ class UnifiedParserApp(QMainWindow):
         # Обновляем индикатор статуса базы данных
         self.db_status_indicator.setStyleSheet("background-color: green; border-radius: 6px;")
         self.db_status_indicator.setToolTip("База данных загружена")
+        
+        # Выполняем сброс данных в фоновом режиме (без подтверждения)
+        self.reset_data_silent()
         
         QMessageBox.information(self, "Успех", 
             f"База данных успешно загружена!\n"
