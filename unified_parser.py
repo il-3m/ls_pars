@@ -1691,6 +1691,38 @@ class UnifiedParserApp(QMainWindow):
                     row_data.append(item.text() if item else "")
                 ws.append(row_data)
             
+            # Второй лист с данными поискового запроса
+            ws_search = wb.create_sheet(title="Поисковый запрос")
+            
+            # Получаем текущие значения параметров поиска
+            search_query = self.search_input.currentText().strip()
+            date_from = self.date_from.date().toString("dd.MM.yyyy")
+            date_to = self.date_to.date().toString("dd.MM.yyyy")
+            max_contracts = self.max_contracts_input.text().strip()
+            
+            # Фильтры
+            moscow_filter = "Да" if self.region_checkbox.isChecked() else "Нет"
+            rosunimed_filter = "Да" if self.rosunimed_checkbox.isChecked() else "Нет"
+            mnn_filter = self.filter_result_input.currentText().strip()
+            form_filter = self.filter_form_input.currentText().strip()
+            dose_filter = self.filter_dose_input.currentText().strip()
+            
+            # Записываем данные поискового запроса
+            ws_search.append(["Параметр", "Значение"])
+            ws_search.append(["Поисковый запрос (МНН)", search_query])
+            ws_search.append(["Дата с", date_from])
+            ws_search.append(["Дата по", date_to])
+            ws_search.append(["Макс. количество контрактов", max_contracts])
+            ws_search.append(["Фильтр Москва", moscow_filter])
+            ws_search.append(["Фильтр Росунимед", rosunimed_filter])
+            ws_search.append(["Фильтр по МНН", mnn_filter])
+            ws_search.append(["Фильтр по форме выпуска", form_filter])
+            ws_search.append(["Фильтр по дозировке", dose_filter])
+            
+            # Настраиваем ширину колонок для листа поиска
+            ws_search.column_dimensions['A'].width = 35
+            ws_search.column_dimensions['B'].width = 50
+            
             wb.save(file_path)
             QMessageBox.information(self, "Успех", f"Данные сохранены в {file_path}")
             self.append_log(f"Экспорт в Excel: {file_path}")
@@ -1714,6 +1746,58 @@ class UnifiedParserApp(QMainWindow):
         try:
             from openpyxl import load_workbook
             wb = load_workbook(file_path, data_only=True)
+            
+            # Проверяем наличие листа с поисковым запросом и загружаем данные
+            if "Поисковый запрос" in wb.sheetnames:
+                ws_search = wb["Поисковый запрос"]
+                
+                # Читаем параметры поиска из второго листа
+                search_params = {}
+                for row in ws_search.iter_rows(values_only=True, min_row=2):  # Пропускаем заголовок
+                    if len(row) >= 2 and row[0] and row[1]:
+                        param_name = str(row[0]).strip()
+                        param_value = str(row[1]).strip() if row[1] else ""
+                        search_params[param_name] = param_value
+                
+                # Устанавливаем значения в поля поиска
+                if "Поисковый запрос (МНН)" in search_params:
+                    self.search_input.setCurrentText(search_params["Поисковый запрос (МНН)"])
+                
+                if "Дата с" in search_params:
+                    try:
+                        date_parts = search_params["Дата с"].split(".")
+                        if len(date_parts) == 3:
+                            self.date_from.setDate(QDate(int(date_parts[2]), int(date_parts[1]), int(date_parts[0])))
+                    except:
+                        pass
+                
+                if "Дата по" in search_params:
+                    try:
+                        date_parts = search_params["Дата по"].split(".")
+                        if len(date_parts) == 3:
+                            self.date_to.setDate(QDate(int(date_parts[2]), int(date_parts[1]), int(date_parts[0])))
+                    except:
+                        pass
+                
+                if "Макс. количество контрактов" in search_params:
+                    self.max_contracts_input.setText(search_params["Макс. количество контрактов"])
+                
+                if "Фильтр Москва" in search_params:
+                    self.region_checkbox.setChecked(search_params["Фильтр Москва"] == "Да")
+                
+                if "Фильтр Росунимед" in search_params:
+                    self.rosunimed_checkbox.setChecked(search_params["Фильтр Росунимед"] == "Да")
+                
+                if "Фильтр по МНН" in search_params:
+                    self.filter_result_input.setCurrentText(search_params["Фильтр по МНН"])
+                
+                if "Фильтр по форме выпуска" in search_params:
+                    self.filter_form_input.setCurrentText(search_params["Фильтр по форме выпуска"])
+                
+                if "Фильтр по дозировке" in search_params:
+                    self.filter_dose_input.setCurrentText(search_params["Фильтр по дозировке"])
+            
+            # Загружаем данные результатов из первого листа
             ws = wb.active
             
             # Очищаем текущую таблицу
