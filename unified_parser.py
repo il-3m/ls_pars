@@ -2664,6 +2664,25 @@ class UnifiedParserApp(QMainWindow):
         row_position = self.results_table.rowCount()
         self.results_table.insertRow(row_position)
         
+        # Проверяем объем - определяем, есть ли у позиции корректный объем
+        qty_value = row_data.get('qty_consumption_unit', '')
+        has_volume = False
+        volume_is_artifact = False
+        if qty_value:
+            qty_text = str(qty_value).strip()
+            if qty_text and qty_text.upper() != "НАИМЕНОВАНИЕ":
+                try:
+                    qty_val = float(qty_text.replace(',', '.').replace(' ', ''))
+                    if qty_val >= 100:  # Не артефакт
+                        has_volume = True
+                    else:
+                        volume_is_artifact = True  # Артефакт парсинга (объем < 100)
+                except ValueError:
+                    pass
+        
+        # Бледно-желтый цвет для подсветки строк без объема (но не артефактов)
+        pale_yellow = QColor(255, 255, 200)
+        
         for col_idx, field_name in enumerate(FIELD_ORDER):
             value = row_data.get(field_name, "")
             
@@ -2682,6 +2701,10 @@ class UnifiedParserApp(QMainWindow):
             else:
                 item = QTableWidgetItem(str(value) if value else "")
                 item.setFlags(item.flags() & ~Qt.ItemIsEditable)  # Только для чтения
+            
+            # Подсвечиваем всю строку бледно-желтым цветом, если нет объема (но не артефакты)
+            if not has_volume and not volume_is_artifact:
+                item.setBackground(pale_yellow)
             
             self.results_table.setItem(row_position, col_idx, item)
         
@@ -2955,6 +2978,7 @@ class UnifiedParserApp(QMainWindow):
         # Проверяем наличие объема для подсветки
         qty_value = row_data.get('qty_consumption_unit', '')
         has_volume = False
+        volume_is_artifact = False
         if qty_value:
             qty_text = str(qty_value).strip()
             if qty_text and qty_text.upper() != "НАИМЕНОВАНИЕ":
@@ -2962,10 +2986,12 @@ class UnifiedParserApp(QMainWindow):
                     qty_val = float(qty_text.replace(',', '.').replace(' ', ''))
                     if qty_val >= 100:  # Не артефакт
                         has_volume = True
+                    else:
+                        volume_is_artifact = True  # Артефакт парсинга (объем < 100)
                 except ValueError:
                     pass
         
-        # Бледно-желтый цвет для подсветки строк без объема
+        # Бледно-желтый цвет для подсветки строк без объема (но не артефактов)
         pale_yellow = QColor(255, 255, 200)
         
         for col_idx, field_name in enumerate(FIELD_ORDER):
@@ -2985,8 +3011,8 @@ class UnifiedParserApp(QMainWindow):
                 item = QTableWidgetItem(str(value) if value else "")
                 item.setFlags(item.flags() & ~Qt.ItemIsEditable)
             
-            # Подсвечиваем всю строку бледно-желтым цветом, если нет объема
-            if not has_volume:
+            # Подсвечиваем всю строку бледно-желтым цветом, если нет объема (но не артефакты)
+            if not has_volume and not volume_is_artifact:
                 item.setBackground(pale_yellow)
             
             self.manual_nmcc_table.setItem(row_position, col_idx, item)
@@ -3560,6 +3586,7 @@ class UnifiedParserApp(QMainWindow):
             # Проверяем объем - определяем, есть ли у позиции корректный объем (требование 2)
             qty_item = self.results_table.item(row_idx, FIELD_ORDER.index('qty_consumption_unit'))
             has_volume = False
+            volume_is_artifact = False
             if qty_item and qty_item.text():
                 qty_text = qty_item.text().strip()
                 if qty_text and qty_text.upper() != "НАИМЕНОВАНИЕ":
@@ -3567,6 +3594,8 @@ class UnifiedParserApp(QMainWindow):
                         qty_val = float(qty_text.replace(',', '.').replace(' ', ''))
                         if qty_val >= 100:  # Не артефакт
                             has_volume = True
+                        else:
+                            volume_is_artifact = True  # Артефакт парсинга (объем < 100)
                     except ValueError:
                         pass
             
@@ -3596,8 +3625,8 @@ class UnifiedParserApp(QMainWindow):
                     item = QTableWidgetItem("")
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                 
-                # Подсвечиваем всю строку бледно-желтым цветом, если нет объема
-                if not has_volume:
+                # Подсвечиваем всю строку бледно-желтым цветом, если нет объема (но не артефакты)
+                if not has_volume and not volume_is_artifact:
                     item.setBackground(pale_yellow)
                 
                 self.nmcc_table.setItem(new_row, col_idx, item)
