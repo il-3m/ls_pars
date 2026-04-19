@@ -941,7 +941,16 @@ def _extract_qty_from_blob(text: str) -> str:
             maxsplit=1,
             flags=re.IGNORECASE,
         )[0]
-        return _clean(value)
+        value = _clean(value)
+        # Проверка: если в значении нет числового количества (только единицы измерения и описания упаковок),
+        # то это не объем, а описание единицы измерения - возвращаем пустую строку
+        # Ищем паттерн числа с возможными единицами измерения (мл, см3, шт, ед, г, кг, л и т.д.)
+        # Важно: исключаем паттерны дозировок типа "10 мг/мл" или "10мг/мл"
+        qty_pattern = re.search(r"\d[\d\s.,]*\s*(?:СМ3|МЛ|Л|Г|КГ|ШТ|ЕД|МЕ)(?!\s*/\s*(?:МЛ|МГ|Г|МКГ))", value, flags=re.IGNORECASE)
+        # Если есть слово "количество" и нет числового объема с единицами измерения - это описание упаковки
+        if re.search(r"количество", value, flags=re.IGNORECASE) and not qty_pattern:
+            return ""
+        return value
 
     if "|" in src:
         for part in [_clean(x) for x in src.split("|") if _clean(x)]:
