@@ -3199,9 +3199,10 @@ class UnifiedParserApp(QMainWindow):
         КРИТИЧЕСКИ ВАЖНО: позиции должны быть из 3 разных контрактов
         """
         try:
-            # Находим индекс колонки price_per_unit и reestr_number
+            # Находим индекс колонки price_per_unit, reestr_number и qty_consumption_unit
             price_col_index = FIELD_ORDER.index('price_per_unit')
             reestr_col_index = FIELD_ORDER.index('reestr_number')
+            qty_col_index = FIELD_ORDER.index('qty_consumption_unit')
             
             # Собираем все видимые строки из итоговой таблицы
             # ГРУППИРУЕМ по номерам контрактов - для каждого контракта берем лучшую позицию (мин. цену)
@@ -3211,6 +3212,20 @@ class UnifiedParserApp(QMainWindow):
                 if not self.results_table.isRowHidden(row):
                     item = self.results_table.item(row, price_col_index)
                     reestr_item = self.results_table.item(row, reestr_col_index)
+                    qty_item = self.results_table.item(row, qty_col_index)
+                    
+                    # Пропускаем позиции без объема (требование 2)
+                    if not qty_item or not qty_item.text():
+                        continue
+                    qty_text = qty_item.text().strip()
+                    if not qty_text or qty_text.upper() == "НАИМЕНОВАНИЕ":
+                        continue
+                    try:
+                        qty_val = float(qty_text.replace(',', '.').replace(' ', ''))
+                        if qty_val < 100:  # Артефакт парсинга
+                            continue
+                    except ValueError:
+                        continue
                     
                     if item and item.text() and reestr_item and reestr_item.text():
                         try:
@@ -3224,7 +3239,7 @@ class UnifiedParserApp(QMainWindow):
                             continue
             
             if len(contract_best_rows) < 3:
-                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено контрактов с ценой: {len(contract_best_rows)}, требуется минимум 3")
+                QMessageBox.warning(self, "Внимание", f"Недостаточно данных для расчета. Найдено контрактов с ценой и объемом: {len(contract_best_rows)}, требуется минимум 3")
                 return
             
             # Сортируем контракты по возрастанию цены (наименьшие цены)
@@ -3438,20 +3453,22 @@ class UnifiedParserApp(QMainWindow):
                     reestr_item = self.results_table.item(row, reestr_col_index)
                     qty_item = self.results_table.item(row, qty_col_index)
                     
-                    # Проверяем объем - должен быть в диапазоне сопоставимости
-                    if qty_item and qty_item.text():
-                        try:
-                            qty_text = qty_item.text().strip().replace(',', '.').replace(' ', '')
-                            qty = float(qty_text)
-                            # Пропускаем позиции с неустановленным объемом (артeфакты парсинга)
-                            if qty < 100 or qty_text.upper() == "НАИМЕНОВАНИЕ":
-                                continue
-                            # Проверяем, попадает ли объем в диапазон сопоставимости
-                            if qty < min_allowed_qty or qty > max_allowed_qty:
-                                # Объем вне диапазона сопоставимости - пропускаем
-                                continue
-                        except ValueError:
+                    # Пропускаем позиции без объема (требование 2)
+                    if not qty_item or not qty_item.text():
+                        continue
+                    qty_text = qty_item.text().strip()
+                    if not qty_text or qty_text.upper() == "НАИМЕНОВАНИЕ":
+                        continue
+                    try:
+                        qty_val = float(qty_text.replace(',', '.').replace(' ', ''))
+                        if qty_val < 100:  # Артефакт парсинга
                             continue
+                        # Проверяем, попадает ли объем в диапазон сопоставимости
+                        if qty_val < min_allowed_qty or qty_val > max_allowed_qty:
+                            # Объем вне диапазона сопоставимости - пропускаем
+                            continue
+                    except ValueError:
+                        continue
                     
                     if item and item.text() and reestr_item and reestr_item.text():
                         try:
@@ -3508,6 +3525,9 @@ class UnifiedParserApp(QMainWindow):
         # Отслеживаем уже добавленные номера реестровых записей (контрактов)
         added_reestr_numbers = set()
         
+        # Бледно-желтый цвет для подсветки строк без объема
+        pale_yellow = QColor(255, 255, 200)
+        
         for row_idx, _ in row_indices:
             # Получаем номер реестровой записи для проверки уникальности контракта
             reestr_item = self.results_table.item(row_idx, FIELD_ORDER.index('reestr_number'))
@@ -3519,21 +3539,16 @@ class UnifiedParserApp(QMainWindow):
             
             # Проверяем объем - пропускаем позиции без установленного объема (требование 2)
             qty_item = self.results_table.item(row_idx, FIELD_ORDER.index('qty_consumption_unit'))
-            if not qty_item or not qty_item.text():
-                continue
-            
-            # Проверяем, что объем не пустой и не содержит только пробелы
-            qty_text = qty_item.text().strip()
-            if not qty_text or qty_text.upper() == "НАИМЕНОВАНИЕ":
-                continue
-            
-            # Проверка на артефакты парсинга (объем < 100)
-            try:
-                qty_val = float(qty_text.replace(',', '.').replace(' ', ''))
-                if qty_val < 100:
-                    continue  # Пропускаем артефакты
-            except ValueError:
-                continue  # Пропускаем если не удалось преобразовать
+            has_volume = False
+            if qty_item and qty_item.text():
+                qty_text = qty_item.text().strip()
+                if qty_text and qty_text.upper() != "НАИМЕНОВАНИЕ":
+                    try:
+                        qty_val = float(qty_text.replace(',', '.').replace(' ', ''))
+                        if qty_val >= 100:  # Не артефакт
+                            has_volume = True
+                    except ValueError:
+                        pass
             
             new_row = self.nmcc_table.rowCount()
             self.nmcc_table.insertRow(new_row)
@@ -3556,6 +3571,10 @@ class UnifiedParserApp(QMainWindow):
                     else:
                         item = QTableWidgetItem(value)
                         item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    
+                    # Подсвечиваем строку бледно-желтым цветом, если нет объема
+                    if not has_volume:
+                        item.setBackground(pale_yellow)
                     
                     self.nmcc_table.setItem(new_row, col_idx, item)
             
