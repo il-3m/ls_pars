@@ -1033,7 +1033,7 @@ class UnifiedParserApp(QMainWindow):
         actions_layout = QHBoxLayout()
         actions_layout.setSpacing(6)
         
-        self.price_button = QPushButton('Статистика')  # Переименована из "Цена"
+        self.price_button = QPushButton('📊 Статистика')  # Переименована из "Цена"
         self.price_button.clicked.connect(self.open_price_dialog)
         self.reset_button = QPushButton('СБРОС')
         self.reset_button.setStyleSheet("background-color: #ffcccc;")
@@ -1047,11 +1047,11 @@ class UnifiedParserApp(QMainWindow):
         export_import_layout = QHBoxLayout()
         export_import_layout.setSpacing(6)
         
-        self.export_excel_button = QPushButton('Скачать')
+        self.export_excel_button = QPushButton('💾 Скачать')
         self.export_excel_button.setMinimumHeight(35)
         self.export_excel_button.clicked.connect(self.export_to_excel)
         
-        self.import_button = QPushButton('Загрузить')
+        self.import_button = QPushButton('📂 Загрузить')
         self.import_button.setMinimumHeight(35)
         self.import_button.clicked.connect(self.import_from_excel)
         
@@ -1111,6 +1111,9 @@ class UnifiedParserApp(QMainWindow):
         self.results_table.verticalHeader().setVisible(False)
         self.results_table.setAlternatingRowColors(True)
         self.results_table.setMinimumHeight(450)
+        # Выделение строки при клике
+        self.results_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.results_table.setSelectionMode(QTableWidget.SingleSelection)
         # Подключаем сигнал для обработки кликов по ячейкам (для открытия ссылок и показа деталей)
         self.results_table.cellDoubleClicked.connect(self.on_results_table_double_click)
         
@@ -1220,12 +1223,12 @@ class UnifiedParserApp(QMainWindow):
         
         # Кнопки справа: Скачать Excel, Скопировать
         buttons_layout.addStretch()
-        self.nmcc_export_excel_btn = QPushButton("Скачать Excel")
+        self.nmcc_export_excel_btn = QPushButton("📄 Скачать Excel")
         self.nmcc_export_excel_btn.setToolTip("Скачать таблицу НМЦК в формате Excel")
         self.nmcc_export_excel_btn.clicked.connect(self.export_nmcc_to_excel)
         buttons_layout.addWidget(self.nmcc_export_excel_btn)
         
-        self.nmcc_copy_btn = QPushButton("Скопировать")
+        self.nmcc_copy_btn = QPushButton("📋 Скопировать")
         self.nmcc_copy_btn.setToolTip("Скопировать таблицу НМЦК в буфер обмена")
         self.nmcc_copy_btn.clicked.connect(self.copy_nmcc_to_clipboard)
         buttons_layout.addWidget(self.nmcc_copy_btn)
@@ -1246,6 +1249,9 @@ class UnifiedParserApp(QMainWindow):
         self.nmcc_table.verticalHeader().setVisible(False)
         self.nmcc_table.setAlternatingRowColors(True)
         self.nmcc_table.setMinimumHeight(300)
+        # Выделение строки при клике
+        self.nmcc_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.nmcc_table.setSelectionMode(QTableWidget.SingleSelection)
         self.nmcc_table.cellDoubleClicked.connect(self.open_nmcc_table_link)
         
         # Устанавливаем начальные ширины колонок
@@ -1347,12 +1353,12 @@ class UnifiedParserApp(QMainWindow):
         
         # Кнопки справа: Скачать Excel, Скопировать
         manual_table_buttons_layout.addStretch()
-        self.manual_nmcc_export_excel_btn = QPushButton("Скачать Excel")
+        self.manual_nmcc_export_excel_btn = QPushButton("📄 Скачать Excel")
         self.manual_nmcc_export_excel_btn.setToolTip("Скачать таблицу НМЦК ручной подбор в формате Excel")
         self.manual_nmcc_export_excel_btn.clicked.connect(self.export_manual_nmcc_to_excel)
         manual_table_buttons_layout.addWidget(self.manual_nmcc_export_excel_btn)
         
-        self.manual_nmcc_copy_btn = QPushButton("Скопировать")
+        self.manual_nmcc_copy_btn = QPushButton("📋 Скопировать")
         self.manual_nmcc_copy_btn.setToolTip("Скопировать таблицу НМЦК ручной подбор в буфер обмена")
         self.manual_nmcc_copy_btn.clicked.connect(self.copy_manual_nmcc_to_clipboard)
         manual_table_buttons_layout.addWidget(self.manual_nmcc_copy_btn)
@@ -2812,8 +2818,8 @@ class UnifiedParserApp(QMainWindow):
         """Показ модального окна с детальными данными строки в табличном виде"""
         dialog = QDialog(self)
         dialog.setWindowTitle("Детали позиции")
-        dialog.setMinimumWidth(600)
-        dialog.setMinimumHeight(500)
+        dialog.setMinimumWidth(800)
+        dialog.setMinimumHeight(600)
         
         layout = QVBoxLayout()
         
@@ -2825,6 +2831,7 @@ class UnifiedParserApp(QMainWindow):
         details_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         details_table.verticalHeader().setVisible(False)
         details_table.setAlternatingRowColors(True)
+        details_table.setWordWrap(True)  # Перенос длинных значений
         
         # Заполняем таблицу данными
         row_num = 0
@@ -2857,12 +2864,14 @@ class UnifiedParserApp(QMainWindow):
                 else:
                     value_item = QTableWidgetItem(str(value))
                     value_item.setFlags(value_item.flags() & ~Qt.ItemIsEditable)
+                    # Разрешаем выделение и копирование текста
+                    value_item.setFlags(value_item.flags() | Qt.ItemIsSelectable)
                 details_table.setItem(row_num, 1, value_item)
                 
                 row_num += 1
         
         # Устанавливаем ширину первой колонки
-        details_table.setColumnWidth(0, 250)
+        details_table.setColumnWidth(0, 300)
         
         # Обработка двойного клика по ссылке в модальном окне
         def on_details_table_double_click(row, column):
@@ -2877,11 +2886,47 @@ class UnifiedParserApp(QMainWindow):
         
         layout.addWidget(details_table)
         
-        # Кнопка "Добавить в НМЦК"
+        # Кнопки управления
         btn_layout = QHBoxLayout()
+        
+        # Кнопка "Удалить позицию" (красная, слева внизу)
+        delete_btn = QPushButton("🗑️ Удалить позицию")
+        delete_btn.setToolTip("Удалить эту позицию из итоговой таблицы")
+        delete_btn.setStyleSheet("background-color: #ff4444; color: white; padding: 8px 16px; font-weight: bold;")
+        
+        def on_delete():
+            # Находим строку в таблице по данным
+            reestr_number = row_data_dict.get('reestr_number', '')
+            if not reestr_number:
+                QMessageBox.warning(dialog, "Внимание", "Не удалось найти номер реестровой записи для удаления.")
+                return
+            
+            # Подтверждение удаления
+            confirm = QMessageBox.question(
+                dialog,
+                "Подтверждение удаления",
+                f"Вы действительно хотите удалить позицию с реестровым номером:\n{reestr_number}?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if confirm == QMessageBox.Yes:
+                # Ищем и удаляем строку в results_table
+                for row in range(self.results_table.rowCount()):
+                    item = self.results_table.item(row, FIELD_ORDER.index('reestr_number'))
+                    if item and item.text() == reestr_number:
+                        self.results_table.removeRow(row)
+                        self.append_log(f"Позиция удалена: {reestr_number}")
+                        break
+                
+                dialog.accept()
+        
+        delete_btn.clicked.connect(on_delete)
+        btn_layout.addWidget(delete_btn)
+        
         btn_layout.addStretch()
         
-        add_to_nmcc_btn = QPushButton("Добавить в НМЦК")
+        add_to_nmcc_btn = QPushButton("➕ Добавить в НМЦК")
         add_to_nmcc_btn.setToolTip("Добавить эту позицию в таблицу НМЦК ручной подбор")
         add_to_nmcc_btn.setStyleSheet("background-color: #4CAF50; color: white; padding: 8px 16px; font-weight: bold;")
         
@@ -4103,7 +4148,7 @@ class UnifiedParserApp(QMainWindow):
         <h2 style="color: #0066cc;">Инструкция по работе с Универсальным парсером ЕИС</h2>
         
         <h3>1. Начало работы</h3>
-        <p><b>1.1.</b> Загрузите базу данных МНН, нажав кнопку "База данных" в левой панели и выбрав файл 
+        <p><b>1.1.</b> Загрузите базу данных МНН, нажав кнопку "📂 База данных" в левой панели и выбрав файл 
         <code>esklp_smnn_*.xlsx</code>. После загрузки станет доступен автокомплит для МНН, форм выпуска и дозировок.</p>
         
         <h3>2. Поиск и парсинг данных</h3>
@@ -4116,15 +4161,24 @@ class UnifiedParserApp(QMainWindow):
             <li><b>Только Росунимед</b> — поиск только по контрактам РОСУНИМЕД</li>
         </ul>
         <p><b>2.4.</b> Установите фильтры по МНН, форме выпуска и дозировке (доступны при загруженной базе данных).</p>
-        <p><b>2.5.</b> Нажмите кнопку "Старт" для начала парсинга.</p>
+        <p><b>2.5.</b> Нажмите кнопку "ЗАПУСТИТЬ" для начала парсинга.</p>
         <p><b>2.6.</b> Результаты будут отображаться во вкладке "Итоговая" в виде таблицы.</p>
         
         <h3>3. Работа с результатами</h3>
         <p><b>3.1.</b> Таблица результатов содержит все найденные позиции. Двойной клик по ссылке в колонке 
         "Контракт (ссылка)" откроет её в браузере.</p>
-        <p><b>3.2.</b> Используйте фильтры для отбора нужных позиций по МНН, форме выпуска и дозировке.</p>
-        <p><b>3.3.</b> Для выгрузки данных нажмите "Скачать".</p>
-        <p><b>3.4.</b> Для загрузки ранее выгруженного файла Excel нажмите "Загрузить" — данные будут импортированы в итоговую таблицу с сохранением форматирования.</p>
+        <p><b>3.2.</b> Клик по любой строке таблицы выделит её цветом для удобства просмотра.</p>
+        <p><b>3.3.</b> Двойной клик по любой ячейке строки откроет модальное окно "Детали позиции" с полной информацией.</p>
+        <p><b>3.4.</b> В окне "Детали позиции":</p>
+        <ul>
+            <li>Все значения видны полностью (длинные значения переносятся)</li>
+            <li>Значения можно выделить и скопировать (Ctrl+C)</li>
+            <li>Кнопка "🗑️ Удалить позицию" (красная) позволяет удалить позицию через подтверждение</li>
+            <li>Кнопка "➕ Добавить в НМЦК" добавляет позицию в таблицу ручного подбора</li>
+        </ul>
+        <p><b>3.5.</b> Используйте фильтры для отбора нужных позиций по МНН, форме выпуска и дозировке.</p>
+        <p><b>3.6.</b> Для выгрузки данных нажмите кнопку "💾 Скачать".</p>
+        <p><b>3.7.</b> Для загрузки ранее выгруженного файла Excel нажмите кнопку "📂 Загрузить" — данные будут импортированы в итоговую таблицу с сохранением форматирования.</p>
         
         <h3>4. Расчет НМЦК</h3>
         <p>Вкладка "НМЦК" предназначена для расчета начальной максимальной цены контракта.</p>
@@ -4147,11 +4201,13 @@ class UnifiedParserApp(QMainWindow):
             <li>Дельта средних цен (абсолютная и процентная)</li>
             <li>Макс. отклонение по объему (абсолютное и процентное)</li>
         </ul>
+        <p><b>4.5.</b> Кнопки "📄 Скачать Excel" и "📋 Скопировать" позволяют экспортировать результаты НМЦК.</p>
         
         <h3>5. НМЦК ручной подбор</h3>
         <p>Вкладка "НМЦК ручной подбор" позволяет вручную формировать список позиций для НМЦК.</p>
         <p><b>5.1.</b> Двойной клик по строке в таблице результатов добавляет позицию в таблицу ручного подбора.</p>
         <p><b>5.2.</b> Поля ввода данных синхронизированы между вкладками "НМЦК" и "НМЦК ручной подбор".</p>
+        <p><b>5.3.</b> Кнопки "📄 Скачать Excel" и "📋 Скопировать" позволяют экспортировать результаты ручного подбора.</p>
         
         <h3>6. Настройки</h3>
         <p>Во вкладке "Настройки" можно изменить параметры:</p>
@@ -4162,7 +4218,7 @@ class UnifiedParserApp(QMainWindow):
         <p>Для доступа к расширенным настройкам парсинга (таймауты, задержки, раунды раскрытия) нажмите кнопку "🔒 Настройки парсинга" и введите код доступа <code>1922</code>.</p>
         
         <h3>7. Сброс данных</h3>
-        <p>Кнопка "Сброс" очищает:</p>
+        <p>Кнопка "СБРОС" (красная) очищает:</p>
         <ul>
             <li>Все данные из таблиц результатов</li>
             <li>Список найденных ссылок</li>
