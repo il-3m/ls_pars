@@ -1,4 +1,79 @@
 ```
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.py~
+*.py.class
+.Python
+venv/
+.venv/
+env/
+ENV/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.pytest_cache/
+.mypy_cache/
+.hypothesis/
+
+# Build artifacts
+build/
+dist/
+*.egg
+*.egg-info/
+.installed.cfg
+*.egg-info/
+*.eggs/
+
+# Executables
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Spec files
+*.spec
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msm
+*.msp
+
+# Environment
+.env
+.env.local
+*.env
+*.env~
+.env*
+.env.*
+.env.local*
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# Logs
+*.log
+
+# Coverage
+coverage/
+htmlcov/
+.coverage*
 ```
