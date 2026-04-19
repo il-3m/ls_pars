@@ -2944,8 +2944,8 @@ class UnifiedParserApp(QMainWindow):
         """Показ модального окна с детальными данными строки в табличном виде"""
         dialog = QDialog(self)
         dialog.setWindowTitle("Детали позиции")
-        dialog.setMinimumWidth(800)
-        dialog.setMinimumHeight(600)
+        dialog.setMinimumWidth(900)
+        dialog.setMinimumHeight(650)
         
         layout = QVBoxLayout()
         
@@ -2958,6 +2958,9 @@ class UnifiedParserApp(QMainWindow):
         details_table.verticalHeader().setVisible(False)
         details_table.setAlternatingRowColors(True)
         details_table.setWordWrap(True)  # Перенос длинных значений
+        
+        # Отключаем обрезку текста, чтобы отображать полное содержимое
+        details_table.setTextElideMode(Qt.ElideNone)
         
         # Заполняем таблицу данными
         row_num = 0
@@ -2992,12 +2995,17 @@ class UnifiedParserApp(QMainWindow):
                     value_item.setFlags(value_item.flags() & ~Qt.ItemIsEditable)
                     # Разрешаем выделение и копирование текста
                     value_item.setFlags(value_item.flags() | Qt.ItemIsSelectable)
+                    # Отключаем обрезку текста для полного отображения
+                    value_item.setFlags(value_item.flags() & ~Qt.ItemIsTruncated)
                 details_table.setItem(row_num, 1, value_item)
+                
+                # Увеличиваем высоту строки для лучшего отображения длинного текста
+                details_table.setRowHeight(row_num, max(40, details_table.rowHeight(row_num)))
                 
                 row_num += 1
         
         # Устанавливаем ширину первой колонки
-        details_table.setColumnWidth(0, 300)
+        details_table.setColumnWidth(0, 350)
         
         # Обработка двойного клика по ссылке в модальном окне
         def on_details_table_double_click(row, column):
@@ -3812,6 +3820,13 @@ class UnifiedParserApp(QMainWindow):
                 try:
                     target_volume = float(volume_str.replace(',', '.'))
                     
+                    # Получаем диапазон сопоставимости из настроек
+                    range_str = self.nmcc_volume_range_input.text().strip()
+                    try:
+                        nmcc_range = float(range_str.replace(',', '.'))
+                    except ValueError:
+                        nmcc_range = 3.0  # По умолчанию
+                    
                     qty_col_index = FIELD_ORDER.index('qty_consumption_unit')
                     
                     for row in range(self.nmcc_table.rowCount()):
@@ -3834,10 +3849,38 @@ class UnifiedParserApp(QMainWindow):
                                 continue
                     
                     self.nmcc_max_deviation_label.setText(f"{max_deviation_abs:.2f} ({max_deviation_percent:.2f}%)")
+                    
+                    # Выделяем бордовым цветом, если отклонение выходит за пределы диапазона сопоставимости
+                    # Диапазон: [target_volume/nmcc_range, target_volume*nmcc_range]
+                    min_allowed = target_volume / nmcc_range
+                    max_allowed = target_volume * nmcc_range
+                    
+                    # Проверяем, есть ли хотя бы одна позиция вне диапазона
+                    outside_range = False
+                    for row in range(self.nmcc_table.rowCount()):
+                        item = self.nmcc_table.item(row, qty_col_index)
+                        if item and item.text():
+                            try:
+                                qty_text = item.text().strip().replace(',', '.').replace(' ', '')
+                                qty = float(qty_text)
+                                if qty < min_allowed or qty > max_allowed:
+                                    outside_range = True
+                                    break
+                            except ValueError:
+                                continue
+                    
+                    if outside_range:
+                        burgundy_color = "#800020"  # Бордовый цвет
+                        self.nmcc_max_deviation_label.setStyleSheet(f"font-weight: bold; color: {burgundy_color};")
+                    else:
+                        # Возвращаем стандартный цвет
+                        self.nmcc_max_deviation_label.setStyleSheet("font-weight: bold; color: #0066cc;")
                 except ValueError:
                     self.nmcc_max_deviation_label.setText("0.00 (0.00%)")
+                    self.nmcc_max_deviation_label.setStyleSheet("font-weight: bold; color: #0066cc;")
             else:
                 self.nmcc_max_deviation_label.setText("0.00 (0.00%)")
+                self.nmcc_max_deviation_label.setStyleSheet("font-weight: bold; color: #0066cc;")
                 
         except Exception as e:
             logging.error(f"Ошибка update_nmcc_summary: {e}", exc_info=True)
@@ -3916,6 +3959,13 @@ class UnifiedParserApp(QMainWindow):
                 try:
                     target_volume = float(volume_str.replace(',', '.'))
                     
+                    # Получаем диапазон сопоставимости из настроек
+                    range_str = self.nmcc_volume_range_input.text().strip()
+                    try:
+                        nmcc_range = float(range_str.replace(',', '.'))
+                    except ValueError:
+                        nmcc_range = 3.0  # По умолчанию
+                    
                     qty_col_index = FIELD_ORDER.index('qty_consumption_unit')
                     
                     for row in range(self.manual_nmcc_table.rowCount()):
@@ -3938,10 +3988,38 @@ class UnifiedParserApp(QMainWindow):
                                 continue
                     
                     self.manual_nmcc_max_deviation_label.setText(f"{max_deviation_abs:.2f} ({max_deviation_percent:.2f}%)")
+                    
+                    # Выделяем бордовым цветом, если отклонение выходит за пределы диапазона сопоставимости
+                    # Диапазон: [target_volume/nmcc_range, target_volume*nmcc_range]
+                    min_allowed = target_volume / nmcc_range
+                    max_allowed = target_volume * nmcc_range
+                    
+                    # Проверяем, есть ли хотя бы одна позиция вне диапазона
+                    outside_range = False
+                    for row in range(self.manual_nmcc_table.rowCount()):
+                        item = self.manual_nmcc_table.item(row, qty_col_index)
+                        if item and item.text():
+                            try:
+                                qty_text = item.text().strip().replace(',', '.').replace(' ', '')
+                                qty = float(qty_text)
+                                if qty < min_allowed or qty > max_allowed:
+                                    outside_range = True
+                                    break
+                            except ValueError:
+                                continue
+                    
+                    if outside_range:
+                        burgundy_color = "#800020"  # Бордовый цвет
+                        self.manual_nmcc_max_deviation_label.setStyleSheet(f"font-weight: bold; color: {burgundy_color};")
+                    else:
+                        # Возвращаем стандартный цвет
+                        self.manual_nmcc_max_deviation_label.setStyleSheet("font-weight: bold; color: #0066cc;")
                 except ValueError:
                     self.manual_nmcc_max_deviation_label.setText("0.00 (0.00%)")
+                    self.manual_nmcc_max_deviation_label.setStyleSheet("font-weight: bold; color: #0066cc;")
             else:
                 self.manual_nmcc_max_deviation_label.setText("0.00 (0.00%)")
+                self.manual_nmcc_max_deviation_label.setStyleSheet("font-weight: bold; color: #0066cc;")
                 
         except Exception as e:
             logging.error(f"Ошибка update_manual_nmcc_summary: {e}", exc_info=True)
@@ -4347,7 +4425,7 @@ class UnifiedParserApp(QMainWindow):
         <p><b>3.3.</b> Двойной клик по любой ячейке строки откроет модальное окно "Детали позиции" с полной информацией.</p>
         <p><b>3.4.</b> В окне "Детали позиции":</p>
         <ul>
-            <li>Все значения видны полностью (длинные значения переносятся)</li>
+            <li>Все значения видны полностью (длинные значения переносятся и не обрезаются)</li>
             <li>Значения можно выделить и скопировать (Ctrl+C)</li>
             <li>Кнопка "🗑️ Удалить позицию" (красная) позволяет удалить позицию через подтверждение</li>
             <li>Кнопка "➕ Добавить в НМЦК" добавляет позицию в таблицу ручного подбора</li>
@@ -4375,7 +4453,7 @@ class UnifiedParserApp(QMainWindow):
             <li>Средняя цена по КП</li>
             <li>Средняя по ЕИС</li>
             <li>Дельта средних цен (абсолютная и процентная)</li>
-            <li>Макс. отклонение по объему (абсолютное и процентное)</li>
+            <li>Макс. отклонение по объему (абсолютное и процентное) — выделяется бордовым цветом, если объем выходит за пределы диапазона сопоставимости</li>
         </ul>
         <p><b>4.5.</b> Кнопки "📄 Скачать Excel" и "📋 Скопировать" позволяют экспортировать результаты НМЦК.</p>
         
@@ -4383,7 +4461,8 @@ class UnifiedParserApp(QMainWindow):
         <p>Вкладка "НМЦК ручной подбор" позволяет вручную формировать список позиций для НМЦК.</p>
         <p><b>5.1.</b> Двойной клик по строке в таблице результатов добавляет позицию в таблицу ручного подбора.</p>
         <p><b>5.2.</b> Поля ввода данных синхронизированы между вкладками "НМЦК" и "НМЦК ручной подбор".</p>
-        <p><b>5.3.</b> Кнопки "📄 Скачать Excel" и "📋 Скопировать" позволяют экспортировать результаты ручного подбора.</p>
+        <p><b>5.3.</b> Блок "Итоговые данные" показывает аналогичные показатели, включая макс. отклонение по объему с бордовой подсветкой при выходе за пределы диапазона сопоставимости.</p>
+        <p><b>5.4.</b> Кнопки "📄 Скачать Excel" и "📋 Скопировать" позволяют экспортировать результаты ручного подбора.</p>
         
         <h3>6. Настройки</h3>
         <p>Во вкладке "Настройки" можно изменить параметры:</p>
