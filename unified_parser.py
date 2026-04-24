@@ -385,8 +385,24 @@ class UnifiedParserWorker(QThread):
         # Устанавливаем путь для кэширования драйвера
         os.environ['WDM_CACHE_DIR'] = driver_cache_dir
         
+        # Для совместимости с разными версиями webdriver_manager
+        try:
+            # Новая версия (>=4.0)
+            from webdriver_manager.core.download_manager import WDMDownloadManager
+            from webdriver_manager.core.driver_cache import DriverCache
+            cache = DriverCache(root_dir=driver_cache_dir)
+            download_manager = WDMDownloadManager(cache=cache)
+            driver_path = ChromeDriverManager(download_manager=download_manager).install()
+        except (ImportError, TypeError):
+            # Старая версия (<4.0) или fallback
+            try:
+                driver_path = ChromeDriverManager(cache_path=driver_cache_dir).install()
+            except TypeError:
+                # Если cache_path не поддерживается, используем путь по умолчанию
+                driver_path = ChromeDriverManager().install()
+        
         self.driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager(cache_path=driver_cache_dir).install()),
+            service=Service(driver_path),
             options=chrome_options
         )
 
@@ -544,8 +560,24 @@ class UnifiedParserWorker(QThread):
             # Устанавливаем путь для кэширования драйвера
             os.environ['WDM_CACHE_DIR'] = driver_cache_dir
             
+            # Для совместимости с разными версиями webdriver_manager
+            try:
+                # Новая версия (>=4.0)
+                from webdriver_manager.core.download_manager import WDMDownloadManager
+                from webdriver_manager.core.driver_cache import DriverCache
+                cache = DriverCache(root_dir=driver_cache_dir)
+                download_manager = WDMDownloadManager(cache=cache)
+                driver_path = ChromeDriverManager(download_manager=download_manager).install()
+            except (ImportError, TypeError):
+                # Старая версия (<4.0) или fallback
+                try:
+                    driver_path = ChromeDriverManager(cache_path=driver_cache_dir).install()
+                except TypeError:
+                    # Если cache_path не поддерживается, используем путь по умолчанию
+                    driver_path = ChromeDriverManager().install()
+            
             self.driver = webdriver.Chrome(
-                service=Service(ChromeDriverManager(cache_path=driver_cache_dir).install()),
+                service=Service(driver_path),
                 options=chrome_options
             )
 
