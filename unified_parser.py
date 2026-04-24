@@ -631,9 +631,43 @@ class UnifiedParserWorker(QThread):
         archive_dir = Path(self.archive_dir)
         
         async def parse_batch():
+            # Определение пути к браузеру для EXE режима
+            browser_executable = None
+            if getattr(sys, 'frozen', False):
+                # Запуск из EXE
+                base_path = sys._MEIPASS
+                if sys.platform == "win32":
+                    browser_executable = os.path.join(base_path, "_playwright_browser", "chrome-win", "chrome.exe")
+                elif sys.platform == "linux":
+                    browser_executable = os.path.join(base_path, "_playwright_browser", "chrome-linux", "chrome")
+                elif sys.platform == "darwin":
+                    browser_executable = os.path.join(base_path, "_playwright_browser", "chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium")
+                
+                if not os.path.exists(browser_executable):
+                    logging.error(f"Браузер не найден по пути: {browser_executable}")
+                    browser_executable = None
+            
             async with async_playwright() as p:
-                browser: Browser = await p.chromium.launch(headless=not self.headed)
-                context: BrowserContext = await browser.new_context(locale="ru-RU")
+                # Подготовка аргументов запуска браузера
+                launch_args = {
+                    "headless": not self.headed,
+                    "args": [
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-blink-features=AutomationControlled",
+                    ]
+                }
+                
+                # Если найден встроенный браузер (для EXE), используем его
+                if browser_executable and os.path.exists(browser_executable):
+                    launch_args["executable_path"] = browser_executable
+                    logging.info(f"Используется встроенный браузер: {browser_executable}")
+                
+                browser: Browser = await p.chromium.launch(**launch_args)
+                context: BrowserContext = await browser.new_context(
+                    locale="ru-RU",
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+                )
                 
                 for idx, link_tuple in enumerate(links, start=1):
                     # Проверка: достигнут ли лимит контрактов перед обработкой следующей ссылки
