@@ -56,6 +56,8 @@ import csv
 import re
 import threading
 import glob
+import tempfile
+import shutil
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict
@@ -361,7 +363,17 @@ class UnifiedParserWorker(QThread):
         self.update_output.emit("")
         self.update_progress.emit(5)
 
-        # Инициализация WebDriver
+        # Инициализация WebDriver с явным указанием пути для драйвера
+        # Используем постоянную папку вместо временной папки _MEI
+        if getattr(sys, 'frozen', False):
+            # Запущен как EXE
+            driver_cache_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'ChromeDriver')
+        else:
+            # Запущен как скрипт
+            driver_cache_dir = os.path.join(tempfile.gettempdir(), 'chromedriver_cache')
+        
+        os.makedirs(driver_cache_dir, exist_ok=True)
+        
         chrome_options = Options()
         if not self.headed:
             chrome_options.add_argument("--headless")
@@ -370,8 +382,11 @@ class UnifiedParserWorker(QThread):
         chrome_options.add_argument("--disable-gcm")
         chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
         
+        # Устанавливаем путь для кэширования драйвера
+        os.environ['WDM_CACHE_DIR'] = driver_cache_dir
+        
         self.driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()),
+            service=Service(ChromeDriverManager(cache_path=driver_cache_dir).install()),
             options=chrome_options
         )
 
@@ -506,8 +521,18 @@ class UnifiedParserWorker(QThread):
         self.update_output.emit("")
         self.update_progress.emit(5)
 
-        # Инициализация WebDriver (если еще не создан)
+        # Инициализация WebDriver (если еще не создан) с явным указанием пути для драйвера
         if not self.driver:
+            # Используем постоянную папку вместо временной папки _MEI
+            if getattr(sys, 'frozen', False):
+                # Запущен как EXE
+                driver_cache_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'ChromeDriver')
+            else:
+                # Запущен как скрипт
+                driver_cache_dir = os.path.join(tempfile.gettempdir(), 'chromedriver_cache')
+            
+            os.makedirs(driver_cache_dir, exist_ok=True)
+            
             chrome_options = Options()
             if not self.headed:
                 chrome_options.add_argument("--headless")
@@ -516,8 +541,11 @@ class UnifiedParserWorker(QThread):
             chrome_options.add_argument("--disable-gcm")
             chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             
+            # Устанавливаем путь для кэширования драйвера
+            os.environ['WDM_CACHE_DIR'] = driver_cache_dir
+            
             self.driver = webdriver.Chrome(
-                service=Service(ChromeDriverManager().install()),
+                service=Service(ChromeDriverManager(cache_path=driver_cache_dir).install()),
                 options=chrome_options
             )
 
