@@ -61,8 +61,6 @@ echo         'selenium.webdriver.chrome.service', >> unified_parser.spec
 echo         'selenium.webdriver.common.by', >> unified_parser.spec
 echo         'selenium.webdriver.support.ui', >> unified_parser.spec
 echo         'selenium.webdriver.support.expected_conditions', >> unified_parser.spec
-echo         'webdriver_manager', >> unified_parser.spec
-echo         'webdriver_manager.chrome', >> unified_parser.spec
 echo         'playwright', >> unified_parser.spec
 echo         'playwright.async_api', >> unified_parser.spec
 echo         'pandas', >> unified_parser.spec
@@ -71,6 +69,9 @@ echo         'pkg_resources.py2_warn', >> unified_parser.spec
 echo         'numpy', >> unified_parser.spec
 echo         'dateutil', >> unified_parser.spec
 echo         'dateutil.zoneinfo', >> unified_parser.spec
+echo         'urllib3', >> unified_parser.spec
+echo         'json', >> unified_parser.spec
+echo         'winreg', >> unified_parser.spec
 echo     ], >> unified_parser.spec
 echo     hookspath=[], >> unified_parser.spec
 echo     hooksconfig={}, >> unified_parser.spec

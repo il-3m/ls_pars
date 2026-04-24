@@ -80,7 +80,9 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
+import subprocess
+import zipfile
+import io
 
 from playwright.async_api import Browser, BrowserContext, Error, Frame, Page, async_playwright
 
@@ -218,6 +220,201 @@ class UnifiedParserWorker(QThread):
         self.all_rows = []
         self.processed_links_count = 0  # Количество обработанных ссылок
         self.results_table = results_table  # Ссылка на таблицу результатов для доступа к фильтру
+
+    def _get_chrome_version(self):
+        """Получение версии Chrome из реестра Windows"""
+        try:
+            import winreg
+            key_path = r"Software\Google\Chrome\BLBeacon"
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+                version = winreg.QueryValueEx(key, "version")[0]
+                return version.split('.')[0]  # Возвращаем только основную версию
+        except Exception:
+            # Пробуем для всех пользователей
+            try:
+                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as key:
+                    version = winreg.QueryValueEx(key, "version")[0]
+                    return version.split('.')[0]
+            except Exception:
+                return None
+
+    def _download_chromedriver(self, chrome_version, driver_dir):
+        """Скачивание ChromeDriver нужной версии"""
+        import platform
+        
+        # Определяем платформу и архитектуру
+        system = platform.system().lower()
+        arch = platform.machine().lower()
+        
+        if arch in ('amd64', 'x86_64', 'x64'):
+            arch_suffix = '64'
+        elif arch in ('x86', 'i386', 'i686'):
+            arch_suffix = '32'
+        elif arch.startswith('arm'):
+            arch_suffix = 'arm64' if '64' in arch else 'arm'
+        else:
+            arch_suffix = '64'  # по умолчанию
+        
+        # Формируем URL для скачивания
+        base_url = "https://chromedriver.storage.googleapis.com"
+        
+        # Для Chrome 115+ используется новый формат URL
+        major_version = int(chrome_version) if chrome_version.isdigit() else 0
+        
+        if major_version >= 115:
+            # Новый формат: https://chromedriver.storage.googleapis.com/115.0.5790.0/chromedriver-win64.zip
+            # Нужно получить точную версию через GoodToKnow
+            good_to_know_url = f"https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json"
+            try:
+                import urllib.request
+                import json
+                req = urllib.request.Request(good_to_know_url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    data = json.loads(response.read().decode())
+                    versions = data.get('versions', [])
+                    
+                    # Ищем подходящую версию
+                    target_version = None
+                    for v in reversed(versions):
+                        if v['version'].startswith(f"{chrome_version}."):
+                            target_version = v
+                            break
+                    
+                    if not target_version:
+                        # Берем последнюю доступную версию
+                        target_version = versions[-1] if versions else None
+                    
+                    if target_version:
+                        downloads = target_version.get('downloads', {}).get('chromedriver', [])
+                        for dl in downloads:
+                            if dl['platform'] == f'win{arch_suffix}':
+                                zip_url = dl['url']
+                                break
+                        else:
+                            # Если не нашли для нашей архитектуры, берем первую попавшуюся
+                            zip_url = downloads[0]['url'] if downloads else None
+                        
+                        if zip_url:
+                            self._extract_zip_url(zip_url, driver_dir)
+                            return True
+            except Exception as e:
+                logging.warning(f"Не удалось получить версию через GoodToKnow: {e}")
+        
+        # Старый формат (для Chrome < 115) или fallback
+        # Пытаемся угадать версию драйвера (мажорная версия Chrome)
+        driver_version = chrome_version
+        
+        if system == 'windows':
+            zip_name = f"chromedriver_win{arch_suffix}.zip"
+        elif system == 'darwin':
+            if arch.startswith('arm'):
+                zip_name = "chromedriver_mac_arm64.zip"
+            else:
+                zip_name = "chromedriver_mac64.zip"
+        else:  # linux
+            zip_name = f"chromedriver_linux{arch_suffix}.zip"
+        
+        zip_url = f"{base_url}/{driver_version}/" + zip_name
+        
+        try:
+            self._extract_zip_url(zip_url, driver_dir)
+            return True
+        except Exception as e:
+            logging.warning(f"Не удалось скачать драйвер версии {driver_version}: {e}")
+            # Пробуем предыдущие версии
+            for offset in range(1, 6):
+                try:
+                    prev_version = str(int(chrome_version) - offset)
+                    zip_url = f"{base_url}/{prev_version}/" + zip_name
+                    self._extract_zip_url(zip_url, driver_dir)
+                    return True
+                except Exception:
+                    continue
+            
+            return False
+
+    def _extract_zip_url(self, zip_url, driver_dir):
+        """Скачивание и распаковка ZIP архива с драйвером"""
+        import urllib.request
+        
+        self.update_output.emit(f"Скачивание ChromeDriver...")
+        
+        # Скачиваем ZIP в память
+        req = urllib.request.Request(zip_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=60) as response:
+            zip_data = response.read()
+        
+        # Распаковываем
+        with zipfile.ZipFile(io.BytesIO(zip_data)) as z:
+            # Находим файл chromedriver.exe
+            for name in z.namelist():
+                if name.endswith('chromedriver.exe') or name == 'chromedriver':
+                    with z.open(name) as src:
+                        driver_path = os.path.join(driver_dir, 'chromedriver.exe')
+                        with open(driver_path, 'wb') as dst:
+                            dst.write(src.read())
+                    # Делаем исполняемым (для Unix)
+                    if os.name != 'nt':
+                        os.chmod(driver_path, 0o755)
+                    return driver_path
+        
+        raise Exception("Файл chromedriver.exe не найден в архиве")
+
+    def _get_chromedriver(self, driver_dir):
+        """Получение ChromeDriver: проверка наличия, версии и скачивание при необходимости"""
+        driver_exe = os.path.join(driver_dir, 'chromedriver.exe')
+        
+        # Проверяем наличие драйвера
+        if os.path.exists(driver_exe):
+            try:
+                # Проверяем версию установленного драйвера
+                result = subprocess.run([driver_exe, '--version'], capture_output=True, text=True, timeout=5)
+                installed_version = result.stdout.strip()
+                
+                # Получаем версию Chrome
+                chrome_version = self._get_chrome_version()
+                
+                if chrome_version and str(chrome_version) in installed_version:
+                    logging.info(f"ChromeDriver уже установлен: {installed_version}")
+                    return driver_exe
+                else:
+                    logging.info(f"Версия ChromeDriver не совпадает с Chrome ({chrome_version}). Переустановка...")
+                    if os.path.exists(driver_exe):
+                        os.remove(driver_exe)
+            except Exception as e:
+                logging.warning(f"Ошибка проверки версии драйвера: {e}")
+                if os.path.exists(driver_exe):
+                    os.remove(driver_exe)
+        
+        # Скачиваем новую версию
+        chrome_version = self._get_chrome_version()
+        if not chrome_version:
+            # Если не удалось определить версию Chrome, пробуем скачать последнюю
+            logging.warning("Не удалось определить версию Chrome, пробуем скачать последнюю версию драйвера")
+            chrome_version = "115"  # Версия по умолчанию для нового формата
+        
+        if self._download_chromedriver(chrome_version, driver_dir):
+            if os.path.exists(driver_exe):
+                logging.info(f"ChromeDriver успешно загружен в {driver_exe}")
+                return driver_exe
+        
+        # Если не удалось скачать, пробуем использовать webdriver_manager как fallback (только если не в EXE)
+        if not getattr(sys, 'frozen', False):
+            try:
+                from webdriver_manager.chrome import ChromeDriverManager
+                from webdriver_manager.core.download_manager import WDMDownloadManager
+                from webdriver_manager.core.driver_cache import DriverCache
+                
+                cache = DriverCache(root_dir=driver_dir)
+                download_manager = WDMDownloadManager(cache=cache)
+                driver_path = ChromeDriverManager(download_manager=download_manager).install()
+                # Копируем в нашу папку
+                shutil.copy2(driver_path, driver_exe)
+                return driver_exe
+            except Exception as e:
+                logging.error(f"webdriver_manager также не смог загрузить драйвер: {e}")
+        
+        raise Exception(f"Не удалось получить ChromeDriver. Проверьте установку Google Chrome.")
 
     def run(self):
         try:
@@ -382,24 +579,18 @@ class UnifiedParserWorker(QThread):
         chrome_options.add_argument("--disable-gcm")
         chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
         
-        # Устанавливаем путь для кэширования драйвера
-        os.environ['WDM_CACHE_DIR'] = driver_cache_dir
+        # Определяем папку для хранения ChromeDriver
+        if getattr(sys, 'frozen', False):
+            # Запущен как EXE - используем папку рядом с exe или в AppData
+            app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'UnifiedParser')
+            driver_cache_dir = os.path.join(app_data_dir, 'ChromeDriver')
+        else:
+            # Запущен как скрипт
+            driver_cache_dir = os.path.join(tempfile.gettempdir(), 'chromedriver_cache_unified')
         
-        # Для совместимости с разными версиями webdriver_manager
-        try:
-            # Новая версия (>=4.0)
-            from webdriver_manager.core.download_manager import WDMDownloadManager
-            from webdriver_manager.core.driver_cache import DriverCache
-            cache = DriverCache(root_dir=driver_cache_dir)
-            download_manager = WDMDownloadManager(cache=cache)
-            driver_path = ChromeDriverManager(download_manager=download_manager).install()
-        except (ImportError, TypeError):
-            # Старая версия (<4.0) или fallback
-            try:
-                driver_path = ChromeDriverManager(cache_path=driver_cache_dir).install()
-            except TypeError:
-                # Если cache_path не поддерживается, используем путь по умолчанию
-                driver_path = ChromeDriverManager().install()
+        os.makedirs(driver_cache_dir, exist_ok=True)
+        
+        driver_path = self._get_chromedriver(driver_cache_dir)
         
         self.driver = webdriver.Chrome(
             service=Service(driver_path),
@@ -539,13 +730,14 @@ class UnifiedParserWorker(QThread):
 
         # Инициализация WebDriver (если еще не создан) с явным указанием пути для драйвера
         if not self.driver:
-            # Используем постоянную папку вместо временной папки _MEI
+            # Определяем папку для хранения ChromeDriver
             if getattr(sys, 'frozen', False):
-                # Запущен как EXE
-                driver_cache_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'ChromeDriver')
+                # Запущен как EXE - используем папку рядом с exe или в AppData
+                app_data_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'UnifiedParser')
+                driver_cache_dir = os.path.join(app_data_dir, 'ChromeDriver')
             else:
                 # Запущен как скрипт
-                driver_cache_dir = os.path.join(tempfile.gettempdir(), 'chromedriver_cache')
+                driver_cache_dir = os.path.join(tempfile.gettempdir(), 'chromedriver_cache_unified')
             
             os.makedirs(driver_cache_dir, exist_ok=True)
             
@@ -557,24 +749,7 @@ class UnifiedParserWorker(QThread):
             chrome_options.add_argument("--disable-gcm")
             chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             
-            # Устанавливаем путь для кэширования драйвера
-            os.environ['WDM_CACHE_DIR'] = driver_cache_dir
-            
-            # Для совместимости с разными версиями webdriver_manager
-            try:
-                # Новая версия (>=4.0)
-                from webdriver_manager.core.download_manager import WDMDownloadManager
-                from webdriver_manager.core.driver_cache import DriverCache
-                cache = DriverCache(root_dir=driver_cache_dir)
-                download_manager = WDMDownloadManager(cache=cache)
-                driver_path = ChromeDriverManager(download_manager=download_manager).install()
-            except (ImportError, TypeError):
-                # Старая версия (<4.0) или fallback
-                try:
-                    driver_path = ChromeDriverManager(cache_path=driver_cache_dir).install()
-                except TypeError:
-                    # Если cache_path не поддерживается, используем путь по умолчанию
-                    driver_path = ChromeDriverManager().install()
+            driver_path = self._get_chromedriver(driver_cache_dir)
             
             self.driver = webdriver.Chrome(
                 service=Service(driver_path),
