@@ -1,4 +1,16 @@
 ```
-__pycache__/
-*.pyc
+# Executable and build artifacts
+*.exe
+*.bat
+*.spec
+dist/
+build/
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Editors
+.vscode/
+.idea/
 ```
