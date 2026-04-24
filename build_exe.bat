@@ -32,78 +32,88 @@ echo.
 echo [4/5] Создание спецификации PyInstaller...
 echo Создаем файл unified_parser.spec...
 
-(
-echo # -*- mode: python ; coding: utf-8 -*-
-echo.
-echo block_cipher = None
-echo.
-echo a = Analysis(
-echo     ['unified_parser.py'],
-echo     pathex=[],
-echo     binaries=[],
-echo     datas=[
-echo         ('eis_parser.py', '.'),
-echo         ('link_finder.py', '.'),
-echo     ],
-echo     hiddenimports=[
-echo         'PyQt5',
-echo         'PyQt5.QtCore',
-echo         'PyQt5.QtGui',
-echo         'PyQt5.QtWidgets',
-echo         'selenium',
-echo         'selenium.webdriver',
-echo         'selenium.webdriver.chrome',
-echo         'selenium.webdriver.chrome.options',
-echo         'selenium.webdriver.chrome.service',
-echo         'selenium.webdriver.common.by',
-echo         'selenium.webdriver.support.ui',
-echo         'selenium.webdriver.support.expected_conditions',
-echo         'webdriver_manager',
-echo         'webdriver_manager.chrome',
-echo         'playwright',
-echo         'playwright.async_api',
-echo         'pandas',
-echo         'openpyxl',
-echo         'pkg_resources.py2_warn',
-echo         'numpy',
-echo         'dateutil',
-echo         'dateutil.zoneinfo',
-echo     ],
-echo     hookspath=[],
-echo     hooksconfig={},
-echo     runtime_hooks=[],
-echo     excludes=[],
-echo     win_no_prefer_redirects=False,
-echo     win_private_assemblies=False,
-echo     cipher=block_cipher,
-echo     noarchive=False,
-echo )
-echo.
-echo pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
-echo.
-echo exe = EXE(
-echo     pyz,
-echo     a.scripts,
-echo     a.binaries,
-echo     a.zipfiles,
-echo     a.datas,
-echo     [],
-echo     name='UnifiedParser',
-echo     debug=False,
-echo     bootloader_ignore_signals=False,
-echo     strip=False,
-echo     upx=True,
-echo     upx_exclude=[],
-echo     runtime_tmpdir=None,
-echo     console=False,
-echo     disable_windowed_traceback=False,
-echo     argv_emulation=False,
-echo     target_arch=None,
-echo     codesign_identity=None,
-echo     entitlements_file=None,
-echo     icon=None,
-echo )
-) > unified_parser.spec
+REM Удаляем старый spec файл если есть
+if exist unified_parser.spec del unified_parser.spec
+
+REM Создаем spec файл построчно, чтобы избежать проблем с кодировкой и буферизацией
+echo # -*- mode: python ; coding: utf-8 -*- > unified_parser.spec
+echo. >> unified_parser.spec
+echo block_cipher = None >> unified_parser.spec
+echo. >> unified_parser.spec
+echo a = Analysis( >> unified_parser.spec
+echo     ['unified_parser.py'], >> unified_parser.spec
+echo     pathex=[], >> unified_parser.spec
+echo     binaries=[], >> unified_parser.spec
+echo     datas=[ >> unified_parser.spec
+echo         ('eis_parser.py', '.'), >> unified_parser.spec
+echo         ('link_finder.py', '.'), >> unified_parser.spec
+echo     ], >> unified_parser.spec
+echo     hiddenimports=[ >> unified_parser.spec
+echo         'PyQt5', >> unified_parser.spec
+echo         'PyQt5.QtCore', >> unified_parser.spec
+echo         'PyQt5.QtGui', >> unified_parser.spec
+echo         'PyQt5.QtWidgets', >> unified_parser.spec
+echo         'selenium', >> unified_parser.spec
+echo         'selenium.webdriver', >> unified_parser.spec
+echo         'selenium.webdriver.chrome', >> unified_parser.spec
+echo         'selenium.webdriver.chrome.options', >> unified_parser.spec
+echo         'selenium.webdriver.chrome.service', >> unified_parser.spec
+echo         'selenium.webdriver.common.by', >> unified_parser.spec
+echo         'selenium.webdriver.support.ui', >> unified_parser.spec
+echo         'selenium.webdriver.support.expected_conditions', >> unified_parser.spec
+echo         'webdriver_manager', >> unified_parser.spec
+echo         'webdriver_manager.chrome', >> unified_parser.spec
+echo         'playwright', >> unified_parser.spec
+echo         'playwright.async_api', >> unified_parser.spec
+echo         'pandas', >> unified_parser.spec
+echo         'openpyxl', >> unified_parser.spec
+echo         'pkg_resources.py2_warn', >> unified_parser.spec
+echo         'numpy', >> unified_parser.spec
+echo         'dateutil', >> unified_parser.spec
+echo         'dateutil.zoneinfo', >> unified_parser.spec
+echo     ], >> unified_parser.spec
+echo     hookspath=[], >> unified_parser.spec
+echo     hooksconfig={}, >> unified_parser.spec
+echo     runtime_hooks=[], >> unified_parser.spec
+echo     excludes=[], >> unified_parser.spec
+echo     win_no_prefer_redirects=False, >> unified_parser.spec
+echo     win_private_assemblies=False, >> unified_parser.spec
+echo     cipher=block_cipher, >> unified_parser.spec
+echo     noarchive=False, >> unified_parser.spec
+echo ) >> unified_parser.spec
+echo. >> unified_parser.spec
+echo pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher) >> unified_parser.spec
+echo. >> unified_parser.spec
+echo exe = EXE( >> unified_parser.spec
+echo     pyz, >> unified_parser.spec
+echo     a.scripts, >> unified_parser.spec
+echo     a.binaries, >> unified_parser.spec
+echo     a.zipfiles, >> unified_parser.spec
+echo     a.datas, >> unified_parser.spec
+echo     [], >> unified_parser.spec
+echo     name='UnifiedParser', >> unified_parser.spec
+echo     debug=False, >> unified_parser.spec
+echo     bootloader_ignore_signals=False, >> unified_parser.spec
+echo     strip=False, >> unified_parser.spec
+echo     upx=True, >> unified_parser.spec
+echo     upx_exclude=[], >> unified_parser.spec
+echo     runtime_tmpdir=None, >> unified_parser.spec
+echo     console=False, >> unified_parser.spec
+echo     disable_windowed_traceback=False, >> unified_parser.spec
+echo     argv_emulation=False, >> unified_parser.spec
+echo     target_arch=None, >> unified_parser.spec
+echo     codesign_identity=None, >> unified_parser.spec
+echo     entitlements_file=None, >> unified_parser.spec
+echo     icon=None, >> unified_parser.spec
+echo ) >> unified_parser.spec
+
+REM Проверка создания файла
+if not exist unified_parser.spec (
+    echo [ОШИБКА] Не удалось создать файл unified_parser.spec
+    pause
+    exit /b 1
+)
+echo Файл unified_parser.spec успешно создан.
 
 echo.
 echo [5/5] Сборка EXE файла...
