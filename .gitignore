@@ -1,4 +1,17 @@
 ```
-__pycache__/
-*.pyc
+# Executable files
+*.exe
+*.bat
+
+# Build artifacts
+build/
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Environment files
+.env
+.env.local
+*.env.*
 ```
