@@ -26,8 +26,34 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
-import tkinter as tk
-from tkinter import ttk, messagebox
+# Mock tkinter if not available (for headless environments)
+try:
+    import tkinter as tk
+    from tkinter import ttk, messagebox
+except ImportError:
+    # Create mocks for tkinter
+    class MockTk:
+        pass
+    class MockTtk:
+        pass
+    class MockMessageBox:
+        @staticmethod
+        def showinfo(title, message): print(f"[INFO] {title}: {message}")
+        @staticmethod
+        def showwarning(title, message): print(f"[WARNING] {title}: {message}")
+        @staticmethod
+        def showerror(title, message): print(f"[ERROR] {title}: {message}")
+    
+    tk = type(sys)('tkinter_mock')
+    tk.Tk = MockTk
+    tk.ttk = MockTtk
+    tk.messagebox = MockMessageBox
+    sys.modules['tkinter'] = tk
+    sys.modules['tkinter.ttk'] = MockTtk
+    sys.modules['tkinter.messagebox'] = MockMessageBox
+    
+    ttk = MockTtk
+    messagebox = MockMessageBox
 
 from playwright.async_api import Browser, BrowserContext, Error, Frame, Page, async_playwright
 
