@@ -1,11 +1,6 @@
-```
 # Build artifacts
 build/
 dist/
-
-# Executables and binaries
-*.exe
-*.bat
 
 # Logs and temp files
 *.log
@@ -19,4 +14,3 @@ dist/
 .env
 .env.local
 .env.*
-```
