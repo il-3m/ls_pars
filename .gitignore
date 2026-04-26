@@ -1,4 +1,11 @@
 ```
-__pycache__/
+# Excel files
+*.xlsx
+
+# Python compiled files
 *.pyc
+__pycache__/
+
+# Executable directory
+EXE/
 ```
