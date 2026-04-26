@@ -1,27 +1,11 @@
 ```
-# Build artifacts
-build/
-dist/
-*.exe
-*.bat
+# Excel files
+*.xlsx
 
-# Dependencies
-node_modules/
-.venv/
-venv/
+# Python compiled files
+*.pyc
 __pycache__/
 
-# Logs and temp files
-*.log
-*.tmp
-*.swp
-
-# Environment
-.env
-.env.local
-*.env.*
-
-# Editors
-.vscode/
-.idea/
+# Executable directory
+EXE/
 ```
